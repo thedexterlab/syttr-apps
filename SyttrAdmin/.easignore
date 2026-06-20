@@ -1,0 +1,13 @@
+.git
+.gitignore
+.vscode
+.qodo
+dist
+node_modules
+.env
+.env.*
+*.log
+*.out
+*.err
+*.pid
+*.ppk

@@ -1,0 +1,313 @@
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import React, { useEffect, useRef, useState } from "react";
+import {
+    ActivityIndicator,
+    Animated,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from "react-native";
+
+type Props = {
+  navigation?: any;
+};
+
+export default function RateAppScreen({ navigation }: Props) {
+  const [rating, setRating] = useState(0);
+  const [review, setReview] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const fade = useRef(new Animated.Value(0)).current;
+  const slide = useRef(new Animated.Value(30)).current;
+  const scale = useRef(new Animated.Value(0.8)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fade, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slide, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scale, {
+        toValue: 1,
+        friction: 6,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  const ratingText = (value: number) => {
+    switch (value) {
+      case 1:
+        return "Poor — We're sorry to hear that";
+      case 2:
+        return "Fair — We'll improve";
+      case 3:
+        return "Good — Glad you're enjoying it";
+      case 4:
+        return "Very Good — Thank you!";
+      case 5:
+        return "Excellent — You made our day!";
+      default:
+        return "Tap the stars to rate";
+    }
+  };
+
+  const submitRating = async () => {
+    if (!rating) return;
+    setSubmitting(true);
+
+    await new Promise((res) => setTimeout(res, 2000));
+
+    setSubmitting(false);
+    navigation?.goBack?.();
+  };
+
+  return (
+    <LinearGradient
+      colors={["#FFF1F5", "#FFE4EC", "#FFCDD2"]}
+      style={{ flex: 1 }}
+    >
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation?.goBack?.()}>
+          <Ionicons name="chevron-back" size={22} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Rate Our App</Text>
+        <View style={{ width: 22 }} />
+      </View>
+
+      <ScrollView contentContainerStyle={styles.container}>
+        {/* Header Card */}
+        <Animated.View
+          style={[
+            styles.card,
+            {
+              opacity: fade,
+              transform: [{ translateY: slide }, { scale }],
+            },
+          ]}
+        >
+          <View style={styles.iconCircle}>
+            <Ionicons name="star" size={26} color="#fff" />
+          </View>
+          <View>
+            <Text style={styles.cardTitle}>Share Your Experience</Text>
+            <Text style={styles.cardSub}>
+              Help us improve with your feedback
+            </Text>
+          </View>
+        </Animated.View>
+
+        {/* Rating */}
+        <Animated.View style={[styles.card, styles.mt]}>
+          <Text style={styles.sectionTitle}>
+            How would you rate our app?
+          </Text>
+
+          <View style={styles.starsRow}>
+            {[1, 2, 3, 4, 5].map((i) => (
+              <TouchableOpacity
+                key={i}
+                onPress={() => setRating(i)}
+                activeOpacity={0.8}
+              >
+                <View
+                  style={[
+                    styles.starCircle,
+                    rating >= i && styles.starActive,
+                  ]}
+                >
+                  <Ionicons
+                    name="star"
+                    size={26}
+                    color={rating >= i ? "#fff" : "#FF80AB"}
+                  />
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.ratingText}>{ratingText(rating)}</Text>
+        </Animated.View>
+
+        {/* Review */}
+        {rating > 0 && (
+          <Animated.View style={[styles.card, styles.mt]}>
+            <Text style={styles.sectionTitle}>
+              Share your thoughts (optional)
+            </Text>
+
+            <TextInput
+              value={review}
+              onChangeText={setReview}
+              multiline
+              numberOfLines={4}
+              placeholder="What do you love? Any suggestions?"
+              placeholderTextColor="#AD1457AA"
+              style={styles.textArea}
+            />
+          </Animated.View>
+        )}
+
+        {/* Actions */}
+        {rating > 0 && (
+          <Animated.View style={{ marginTop: 24 }}>
+            <LinearGradient
+              colors={["#FF80AB", "#FFB6C1"]}
+              style={styles.submitBtn}
+            >
+              <TouchableOpacity
+                disabled={submitting}
+                onPress={submitRating}
+                style={styles.submitTouch}
+              >
+                {submitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons
+                      name="create"
+                      size={20}
+                      color="#fff"
+                    />
+                    <Text style={styles.submitText}>
+                      Submit Review
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </LinearGradient>
+
+            <TouchableOpacity
+              disabled={submitting}
+              onPress={() => navigation?.goBack?.()}
+            >
+              <Text style={styles.skip}>Maybe Later</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+      </ScrollView>
+    </LinearGradient>
+  );
+}
+
+/* ---------------- STYLES ---------------- */
+
+const styles = StyleSheet.create({
+  header: {
+    height: 60,
+    backgroundColor: "#FF80AB",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#fff",
+  },
+  container: {
+    padding: 16,
+    paddingBottom: 40,
+  },
+  card: {
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderRadius: 20,
+    padding: 20,
+  },
+  mt: {
+    marginTop: 20,
+  },
+  iconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#FF80AB",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  cardTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#880E4F",
+  },
+  cardSub: {
+    fontSize: 14,
+    color: "#AD1457",
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#880E4F",
+    textAlign: "center",
+  },
+  starsRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginTop: 16,
+    gap: 12,
+  },
+  starCircle: {
+    padding: 14,
+    borderRadius: 40,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#FF80AB40",
+  },
+  starActive: {
+    backgroundColor: "#FF80AB",
+    borderColor: "#FF80AB",
+  },
+  ratingText: {
+    marginTop: 14,
+    fontSize: 14,
+    color: "#AD1457",
+    textAlign: "center",
+    fontWeight: "600",
+  },
+  textArea: {
+    marginTop: 16,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 14,
+    color: "#880E4F",
+    borderWidth: 1,
+    borderColor: "#FF80AB40",
+    textAlignVertical: "top",
+  },
+  submitBtn: {
+    borderRadius: 16,
+    marginBottom: 12,
+  },
+  submitTouch: {
+    height: 56,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  submitText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  skip: {
+    textAlign: "center",
+    fontSize: 14,
+    color: "#AD1457",
+    fontWeight: "500",
+  },
+});

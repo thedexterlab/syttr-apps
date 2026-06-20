@@ -1,0 +1,27 @@
+.codex/
+.vscode/
+
+# Secrets
+*.ppk
+.env
+.env.*
+!.env.example
+
+# Node / Expo
+node_modules/
+dist/
+build/
+.expo/
+
+# Logs
+*.log
+*.out
+*.err
+*.pid
+
+# Archives
+*.zip
+
+# OS / misc
+.DS_Store
+Thumbs.db

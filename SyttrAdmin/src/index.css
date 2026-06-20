@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+@font-face {
+  font-family: 'Playfair Display';
+  src: url('../assets/fonts/PlayfairDisplay-VariableFont_wght.ttf') format('truetype');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --ink: #1a0f1d;
+  --panel: #211127;
+  --muted: #f1d7ff;
+  --text: #fff8fd;
+  --accent: #ff6fb1;
+  --accent-strong: #ffd166;
+  --border: rgba(255, 255, 255, 0.08);
+  font-family: 'Space Grotesk', 'Playfair Display', sans-serif;
+  line-height: 1.6;
+  font-weight: 400;
+  color: var(--text);
+  background-color: var(--ink);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  transition: opacity 0.35s ease;
+  background:
+    radial-gradient(120% 120% at 10% 20%, rgba(255, 111, 177, 0.12), transparent 35%),
+    radial-gradient(90% 90% at 80% 0%, rgba(255, 209, 102, 0.12), transparent 40%),
+    linear-gradient(135deg, #130715, #1c0d1f 55%, #210f26);
+  color: var(--text);
+}
+
+body.page-fade {
+  opacity: 0;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  color: #ffe089;
+}

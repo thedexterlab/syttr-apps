@@ -1,0 +1,130 @@
+{
+  "expo": {
+    "name": "Syttr",
+    "slug": "syttr",
+    "owner": "dexad",
+    "version": "3.1.46",
+    "orientation": "portrait",
+    "icon": "./assets/AppIcon/AppIcon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
+    "scheme": "syttr",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "assetBundlePatterns": [
+      "assets/ApplePay/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.dexad.Syttr",
+      "entitlements": {
+        "aps-environment": "production"
+      },
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": [
+          "remote-notification"
+        ],
+        "NSCameraUsageDescription": "Syttr uses the camera so you can take a profile photo and attach photos to chats or profile updates. For example, you can capture a syttr or parent profile picture directly in the app.",
+        "NSPhotoLibraryUsageDescription": "Syttr uses your photo library so you can choose profile photos and attach images or videos in chats. For example, you can select a saved profile picture or send a photo in a conversation.",
+        "NSLocationWhenInUseUsageDescription": "Syttr uses your location while the app is open to help fill in your address, show nearby sitters and jobs, and place bookings correctly on the map. For example, you can use your current location instead of typing your address manually when creating a profile or posting a job.",
+        "NSUserNotificationsUsageDescription": "Syttr uses notifications to alert you about new messages, booking requests, job updates, and important account activity."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/AppIcon/AppIcon.png",
+        "monochromeImage": "./assets/AppIcon/AppIcon.png"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "package": "com.dexad.Syttr",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 240,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff",
+          "dark": {
+            "backgroundColor": "#000000"
+          }
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Syttr uses your photo library so you can choose profile photos and attach images or videos in chats. For example, you can select a saved profile picture or send a photo in a conversation.",
+          "cameraPermission": "Syttr uses the camera so you can take a profile photo and attach photos to chats or profile updates. For example, you can capture a syttr or parent profile picture directly in the app."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Syttr uses your location while the app is open to help fill in your address, show nearby sitters and jobs, and place bookings correctly on the map. For example, you can use your current location instead of typing your address manually when creating a profile or posting a job."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/AppIcon/AppIcon.png",
+          "color": "#F27C9C",
+          "defaultChannel": "default",
+          "enableBackgroundRemoteNotifications": true
+        }
+      ],
+      "expo-mail-composer",
+      "@react-native-community/datetimepicker",
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.syttr.app",
+          "enableGooglePay": true
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "EXPO_PUBLIC_API_BASE_URL": "https://syttr.zyronexlab.com/api/",
+      "EXPO_PUBLIC_API_KEY": "syttr-mobile-e057e222bd4f4c55841f2737bba7464f",
+      "EXPO_PUBLIC_PUSHER_APP_KEY": "fe89dde73a7e67888eba",
+      "EXPO_PUBLIC_PUSHER_APP_CLUSTER": "mt1",
+      "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyAB2wk1DrgbjGmX8nA0R9xZRU6taetSzhU",
+      "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51Sqar1RwTJfTKVCxYpdV4F82ukBLv3Zcwt2r7PTNBTlxDpgTG8C82W44qdGurGUFvzbAEiu3yTsEmFWnaHKWRzEH00CrzFaOEe",
+      "EXPO_PUBLIC_APPLE_PAY_MERCHANT_ID": "merchant.com.syttr.app",
+      "APPLE_PAY_CERT_PATH": "assets/ApplePay/apple_pay.cer",
+      "EXPO_PUBLIC_STRIPE_VERIFICATION_PRODUCT_ID": "prod_U5RVIjfZaX2k69",
+      "EXPO_PUBLIC_STRIPE_VERIFICATION_PRICE_ID": "price_1T7GchRwTJfTKVCxGRR0Koks",
+      "EXPO_PUBLIC_STRIPE_BG_VERIFICATION_PRODUCT_ID": "prod_U5RVIjfZaX2k69",
+      "EXPO_PUBLIC_STRIPE_BG_VERIFICATION_PRICE_ID": "price_1T7GchRwTJfTKVCxGRR0Koks",
+      "EXPO_PUBLIC_STRIPE_BG_VERIFICATION_WITH_DRIVING_PRODUCT_ID": "prod_U5RVKtsOhFnjSH",
+      "EXPO_PUBLIC_STRIPE_BG_VERIFICATION_WITH_DRIVING_PRICE_ID": "price_1T7GcJRwTJfTKVCxTK1SVnAQ",
+      "EXPO_PUBLIC_STRIPE_FAMILY_SUBSCRIPTION_PRODUCT_ID": "prod_TqWQIH7TaxfKUj",
+      "EXPO_PUBLIC_STRIPE_FAMILY_SUBSCRIPTION_PRICE_ID": "price_1SspNQRwTJfTKVCxUrn9gN12",
+      "EXPO_PUBLIC_STRIPE_DESTINATION_ID": "we_1SsQ45RwTJfTKVCxiavLfM9q",
+      "router": {},
+      "eas": {
+        "projectId": "eaa8526a-f809-42c4-8ed6-56d460062323"
+      }
+    }
+  }
+}
