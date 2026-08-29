@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { hp, rf, rs, wp } from "../utils/responsive";
 import { MapView, Marker, PROVIDER_GOOGLE } from "../../lib/WebSafeMap";
-import { apiRequest, getRuntimeApiKey, sanitizeToken } from "../Api";
+import { apiRequest, getRuntimeApiKey, isVerificationRequiredApiError, sanitizeToken } from "../Api";
 
 /* ---------------- TYPES ---------------- */
 
@@ -54,6 +54,7 @@ type Props = {
   }) => void;
   onCancel?: (params: { bookingId?: string; jobId?: string | number }) => void;
   onOpenParentProfile?: (parent: any) => void;
+  onRequireVerification?: () => void;
 };
 
 const pickFirstValue = (...values: any[]) => {
@@ -97,6 +98,7 @@ export default function NannyBookingDetailScreen({
   onMessage,
   onCancel,
   onOpenParentProfile,
+  onRequireVerification,
 }: Props) {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
@@ -163,7 +165,14 @@ export default function NannyBookingDetailScreen({
   const displayKids = kids.length ? kids : fallbackKids;
   const kidCount = displayKids.length || 1;
 
-  const duration = event.hours || "3h";
+  const duration =
+    pickFirstValue(
+      event.hours,
+      rawJob?.hours,
+      rawJob?.duration,
+      event.raw?.hours,
+      event.raw?.data?.hours
+    );
   const status = currentStatus;
   const formatTime12 = (value?: string) => {
     if (!value) return "";
@@ -219,20 +228,22 @@ export default function NannyBookingDetailScreen({
       ? event.pay
       : parseFloat(String(event.pay)) ||
         parseFloat(String(rawJob?.hourly_rate || rawJob?.rate || rawJob?.pay_rate)) ||
-        25;
+        0;
 
   const pay =
     event.pay !== undefined
       ? formatCurrencyValue(event.pay, { suffix: "/hr" })
-      : "$25.00/hr";
+      : ratePerHour > 0
+      ? formatCurrencyValue(ratePerHour, { suffix: "/hr" })
+      : "";
 
   const totalText = useMemo(() => {
     if (totalFromJob !== undefined && totalFromJob !== null) {
       const parsed = parseFloat(String(totalFromJob));
       if (Number.isFinite(parsed)) return `$${parsed.toFixed(2)}`;
     }
-    const hrsNum = parseFloat(duration);
-    if (!Number.isFinite(hrsNum)) return "$75.00";
+    const hrsNum = parseFloat(String(duration || ""));
+    if (!Number.isFinite(hrsNum) || ratePerHour <= 0) return "";
     return `$${(hrsNum * ratePerHour).toFixed(2)}`;
   }, [duration, ratePerHour, totalFromJob]);
 
@@ -462,6 +473,10 @@ export default function NannyBookingDetailScreen({
         decision === "accept" ? "Hire request accepted." : "Hire request rejected."
       );
     } catch (e: any) {
+      if (isVerificationRequiredApiError(e)) {
+        onRequireVerification?.();
+        return;
+      }
       Alert.alert("Hire Request", e?.message || "Unable to update hire request.");
     } finally {
       setDecisionLoading(null);
@@ -1281,6 +1296,7 @@ const styles = StyleSheet.create({
   },
   primaryBtn: { backgroundColor: "#FF80AB", borderColor: "#FF80AB" },
   cancelBtn: { backgroundColor: "#FFF3D6", borderColor: "#FFC67A" },
+  actionBtnDisabled: { opacity: 0.65 },
   actionTextPrimary: { color: "#fff", fontWeight: "700" },
   actionTextCancel: { color: "#C2185B", fontWeight: "700" },
 

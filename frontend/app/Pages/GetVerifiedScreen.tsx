@@ -1,12 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   AppState,
-  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -43,9 +43,6 @@ type Props = {
 };
 
 const NANNY_BACKGROUND_CHECK_FEE = 19.99;
-const NANNY_DRIVING_ADD_ON_FEE = 6.99;
-const NANNY_VERIFICATION_FEE_WITH_DRIVING =
-  NANNY_BACKGROUND_CHECK_FEE + NANNY_DRIVING_ADD_ON_FEE;
 const VERIFICATION_PAYMENT_DONE_KEY = "verification_payment_completed";
 const STORAGE_KEYS = {
   userType: "user_type",
@@ -71,7 +68,7 @@ const normalizeIsoDate = (value?: string | null) => {
 };
 
 const VERIFICATION_REQUEST_TIMEOUT_MS = 15000;
-const DEFAULT_REMOTE_API_BASE_URL = "https://syttr.zyronexlab.com/api/";
+const DEFAULT_REMOTE_API_BASE_URL = "https://api.syttr.zyronexlab.com/api/";
 
 const normalizeApiBase = (value?: string | null) =>
   `${String(value || "").trim().replace(/\/+$/, "")}/`;
@@ -192,14 +189,13 @@ export default function GetVerifiedScreen({
   onRejected,
   onAddPaymentMethod,
   onContactSupport,
-  onSkip,
   onLogout,
 }: Props) {
+  const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [quickappLink, setQuickappLink] = useState<string | null>(null);
   const [tazStatus, setTazStatus] = useState<string | null>(null);
   const [userType, setUserType] = useState<string>("");
-  const [userTypeLoaded, setUserTypeLoaded] = useState(false);
   const [includeMvr, setIncludeMvr] = useState(false);
   const [driversLicenseNumber, setDriversLicenseNumber] = useState("");
   const [driversLicenseState, setDriversLicenseState] = useState("");
@@ -211,6 +207,7 @@ export default function GetVerifiedScreen({
   const [oneTimePaymentVisible, setOneTimePaymentVisible] = useState(false);
   const [hasSavedPaymentMethod, setHasSavedPaymentMethod] = useState(false);
   const [checkingSavedPaymentMethod, setCheckingSavedPaymentMethod] = useState(true);
+  const [configuredVerificationFee, setConfiguredVerificationFee] = useState(NANNY_BACKGROUND_CHECK_FEE);
   const [pendingVerificationAction, setPendingVerificationAction] = useState<
     "start" | "resume" | null
   >(null);
@@ -222,6 +219,13 @@ export default function GetVerifiedScreen({
       try {
         const type = ((await AsyncStorage.getItem("user_type")) || "client").toLowerCase();
         if (active) setUserType(type);
+        const role = type === "nanny" || type === "syttr" ? "syttr" : "parent";
+        const feeResponse = await fetch(`${BASE_URL}verification/config?role=${role}`);
+        const feeJson = await feeResponse.json().catch(() => ({}));
+        const fee = Number(feeJson?.data?.amount);
+        if (active && feeResponse.ok && Number.isFinite(fee) && fee > 0) {
+          setConfiguredVerificationFee(fee);
+        }
         const dobKey = type === "nanny" ? "nanny_dob" : "user_dob";
         const storedDob = await AsyncStorage.getItem(dobKey);
         if (active && storedDob) {
@@ -237,7 +241,6 @@ export default function GetVerifiedScreen({
       } catch {
         if (active) setUserType("client");
       } finally {
-        if (active) setUserTypeLoaded(true);
       }
     })();
     return () => {
@@ -257,19 +260,21 @@ export default function GetVerifiedScreen({
 
   const openQuickApp = async (link?: string | null) => {
     if (!link) return;
-    await Linking.openURL(link);
+    router.push({ pathname: "/background-check" as any, params: { url: link } });
   };
 
   const fetchTazStatus = async () => {
     try {
-      const { isNanny, id } = await getStoredUserData();
+      const { isNanny, id, token } = await getStoredUserData();
       if (!id) return null;
       const idKey = isNanny ? "nanny_id" : "user_id";
+      const cleanToken = sanitizeToken(token || undefined);
       const { response: res, data } = await fetchApiWithFallback("taz/status", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
+          ...(cleanToken ? { Authorization: `Bearer ${cleanToken}` } : {}),
         },
         body: JSON.stringify({ [idKey]: String(id) }),
       });
@@ -315,6 +320,7 @@ export default function GetVerifiedScreen({
         : statusIsQuickappCompleted
         ? "completed"
         : normalizeVerificationStatus(data.status);
+      const statusIsCompleted = status === "completed" || orderStatus === "completed";
       const nextQuickappLink = String(data.quickapp_link || "").trim();
       const nextOrderGuid = String(
         data.taz_order_guid ||
@@ -347,7 +353,7 @@ export default function GetVerifiedScreen({
       }
 
       const shouldAdvanceToReview =
-        statusIsQuickappCompleted || decisionIsAccepted;
+        statusIsCompleted || statusIsQuickappCompleted || decisionIsAccepted;
 
       if (decisionIsRejected) {
         advancedToReviewRef.current = false;
@@ -401,18 +407,20 @@ export default function GetVerifiedScreen({
     if (submitting) return;
     try {
       setSubmitting(true);
-      const { isNanny, id } = await getStoredUserData();
+      const { isNanny, id, token } = await getStoredUserData();
       if (!id) {
         Alert.alert("Missing info", "Missing: user_id");
         return;
       }
 
       const idKey = isNanny ? "nanny_id" : "user_id";
+      const cleanToken = sanitizeToken(token || undefined);
       const { response: resp, raw, data } = await fetchApiWithFallback("taz/regenerate-link", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
+          ...(cleanToken ? { Authorization: `Bearer ${cleanToken}` } : {}),
         },
         body: JSON.stringify({ [idKey]: String(id) }),
       });
@@ -483,7 +491,7 @@ export default function GetVerifiedScreen({
     if (submitting) return;
     try {
       setSubmitting(true);
-      const { isNanny, id, name, email } = await getStoredUserData();
+      const { isNanny, id, name, email, token } = await getStoredUserData();
 
       if (!id || !email) {
         const missing = [
@@ -500,6 +508,7 @@ export default function GetVerifiedScreen({
       const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "Profile";
 
       const idKey = isNanny ? "nanny_id" : "user_id";
+      const cleanToken = sanitizeToken(token || undefined);
       const verificationType = isNanny && includeMvr ? "mvr_employment" : "employment";
       const payload: Record<string, any> = {
         [idKey]: String(id),
@@ -546,6 +555,7 @@ export default function GetVerifiedScreen({
           headers: {
             "Content-Type": "application/json",
             Accept: "application/json",
+            ...(cleanToken ? { Authorization: `Bearer ${cleanToken}` } : {}),
           },
           body: JSON.stringify(payload),
         }
@@ -595,6 +605,7 @@ export default function GetVerifiedScreen({
           headers: {
             "Content-Type": "application/json",
             Accept: "application/json",
+            ...(cleanToken ? { Authorization: `Bearer ${cleanToken}` } : {}),
           },
           body: JSON.stringify({ [idKey]: String(id) }),
         });
@@ -863,7 +874,7 @@ export default function GetVerifiedScreen({
       String((await AsyncStorage.getItem(VERIFICATION_PAYMENT_DONE_KEY)) || "").toLowerCase() ===
       "true";
 
-    if (isNannyUser && (latestOrderFound || latestQuickappLink || ["app-pending", "completed", "failed"].includes(latestStatus))) {
+    if (latestOrderFound || latestQuickappLink || ["app-pending", "completed", "failed"].includes(latestStatus)) {
       if (!paymentAlreadyDone && !["completed", "failed"].includes(latestStatus) && verificationFee > 0) {
         const paid = await ensureVerificationPayment("resume");
         if (!paid) {
@@ -873,7 +884,7 @@ export default function GetVerifiedScreen({
       await resumeExistingVerification();
       return;
     }
-    if (isNannyUser && verificationFee > 0) {
+    if (verificationFee > 0) {
       if (paymentAlreadyDone) {
         const startResult = await handleStart({ openQuickAppModal: false });
         if (!startResult?.success) {
@@ -933,12 +944,7 @@ export default function GetVerifiedScreen({
   }, []);
 
   const isNannyUser = userType === "nanny" || userType === "syttr";
-  const canSkipVerification = userTypeLoaded && !isNannyUser;
-  const verificationFee = isNannyUser
-    ? includeMvr
-      ? NANNY_VERIFICATION_FEE_WITH_DRIVING
-      : NANNY_BACKGROUND_CHECK_FEE
-    : 0;
+  const verificationFee = configuredVerificationFee;
 
   useEffect(() => {
     if (!isNannyUser && includeMvr) {
@@ -964,13 +970,7 @@ export default function GetVerifiedScreen({
           </TouchableOpacity>
         )}
         <Text style={styles.headerTitle}>Get Verified</Text>
-        {canSkipVerification ? (
-          <TouchableOpacity onPress={onSkip} style={styles.skipBtn} activeOpacity={0.85}>
-            <Text style={styles.skipBtnText}>Skip</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: rs(32) }} />
-        )}
+        <View style={{ width: rs(32) }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -1039,12 +1039,12 @@ export default function GetVerifiedScreen({
           <Text style={styles.cardTitle}>Verification type</Text>
           <Text style={styles.cardText}>
             {isNannyUser
-              ? `One-time payment: background check $${NANNY_BACKGROUND_CHECK_FEE.toFixed(
+              ? `One-time payment: background check $${configuredVerificationFee.toFixed(
                   2
-                )}. Add driving verification for +$${NANNY_DRIVING_ADD_ON_FEE.toFixed(2)}.`
-              : "Parents use employment verification only."}
+                )}.`
+              : `One-time parent verification: $${verificationFee.toFixed(2)}.`}
           </Text>
-          {isNannyUser ? (
+          {verificationFee > 0 ? (
             <View style={styles.feeBox}>
               <Text style={styles.feeTitle}>Verification Fee</Text>
               <Text style={styles.feeValue}>${verificationFee.toFixed(2)}</Text>
@@ -1204,14 +1204,12 @@ export default function GetVerifiedScreen({
                   ? "Continue Verification"
                   : isFailed
                   ? "Contact Support"
-                  : isNannyUser
-                  ? `Start Verification - $${verificationFee.toFixed(2)}`
-                  : "Start Verification"}
+                  : `Start Verification - $${verificationFee.toFixed(2)}`}
               </Text>
             </>
           )}
         </TouchableOpacity>
-        {isNannyUser && verificationFee > 0 && !hasSavedPaymentMethod ? (
+        {verificationFee > 0 && !hasSavedPaymentMethod ? (
           <TouchableOpacity
             style={styles.paymentMethodButton}
             activeOpacity={0.85}
@@ -1729,6 +1727,3 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 });
-
-
-

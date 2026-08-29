@@ -20,6 +20,7 @@ import {
   cancelSubscription,
   getSubscriptionPlans,
   getSubscriptionStatus,
+  isVerificationRequiredApiError,
   pauseSubscription,
   resumeSubscription,
   sanitizeToken
@@ -32,6 +33,7 @@ type Props = {
   navigation?: any;
   onBack?: () => void;
   onAddPaymentMethod?: () => void;
+  onRequireVerification?: () => void;
 };
 
 type BillingHistoryItem = {
@@ -361,7 +363,7 @@ const showPopup = (title: string, message: string) => {
   Alert.alert(resolvedTitle || "Message", resolvedMessage || "Something went wrong.");
 };
 
-export default function SubscriptionScreen({ navigation, onBack, onAddPaymentMethod }: Props) {
+export default function SubscriptionScreen({ navigation, onBack, onAddPaymentMethod, onRequireVerification }: Props) {
   const { methods, reload, isLoading: loadingPaymentMethods } = usePaymentMethodsStore();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -406,7 +408,10 @@ export default function SubscriptionScreen({ navigation, onBack, onAddPaymentMet
       setPlanConfig(resolvedPlan);
       setSelectedPlanSlug(resolvedPlan.slug);
       return resolvedPlan;
-    } catch {
+    } catch (error: any) {
+      if (isVerificationRequiredApiError(error)) {
+        onRequireVerification?.();
+      }
       availablePlansRef.current = [DEFAULT_PLAN];
       planConfigRef.current = DEFAULT_PLAN;
       setAvailablePlans([DEFAULT_PLAN]);
@@ -416,7 +421,7 @@ export default function SubscriptionScreen({ navigation, onBack, onAddPaymentMet
     } finally {
       setLoadingPlanConfig(false);
     }
-  }, []);
+  }, [onRequireVerification]);
 
   const syncSubscriptionStatus = useCallback(async (fallbackPlan?: SubscriptionPlanConfig) => {
     try {
@@ -494,10 +499,14 @@ export default function SubscriptionScreen({ navigation, onBack, onAddPaymentMet
         setSubscriptionPlanName("");
         await AsyncStorage.removeItem("subscription_plan");
       }
-    } catch {
+    } catch (error: any) {
+      if (isVerificationRequiredApiError(error)) {
+        onRequireVerification?.();
+        return;
+      }
       // Keep the last known subscription state instead of incorrectly rolling back the UI.
     }
-  }, []);
+  }, [onRequireVerification]);
 
   const loadBillingHistory = useCallback(async () => {
     setLoadingBillingHistory(true);
@@ -533,8 +542,16 @@ export default function SubscriptionScreen({ navigation, onBack, onAddPaymentMet
               ...(apiKey ? { "x-api-key": apiKey } : {}),
             },
           });
-          if (!res.ok) continue;
           const payload = await res.json().catch(() => null);
+          if (
+            !res.ok &&
+            isVerificationRequiredApiError({ status: res.status, payload, message: payload?.message })
+          ) {
+            setBillingHistory([]);
+            onRequireVerification?.();
+            return;
+          }
+          if (!res.ok) continue;
           const rows = getBillingArrayFromPayload(payload);
           if (rows === null) continue;
           if (fallbackRows === null) fallbackRows = rows;
@@ -542,7 +559,12 @@ export default function SubscriptionScreen({ navigation, onBack, onAddPaymentMet
             chosenRows = rows;
             break;
           }
-        } catch {
+        } catch (error) {
+          if (isVerificationRequiredApiError(error)) {
+            setBillingHistory([]);
+            onRequireVerification?.();
+            return;
+          }
           // try next endpoint
         }
       }
@@ -556,12 +578,16 @@ export default function SubscriptionScreen({ navigation, onBack, onAddPaymentMet
           item.category === "job"
       );
       setBillingHistory(prioritized.length ? prioritized : normalized);
-    } catch {
+    } catch (error: any) {
+      if (isVerificationRequiredApiError(error)) {
+        onRequireVerification?.();
+        return;
+      }
       setBillingHistory([]);
     } finally {
       setLoadingBillingHistory(false);
     }
-  }, []);
+  }, [onRequireVerification]);
 
   const initializeScreen = useCallback(async () => {
     try {
@@ -571,10 +597,13 @@ export default function SubscriptionScreen({ navigation, onBack, onAddPaymentMet
         loadBillingHistory(),
         reload(),
       ]);
-    } catch {
+    } catch (error: any) {
+      if (isVerificationRequiredApiError(error)) {
+        onRequireVerification?.();
+      }
       // keep screen usable even if one of the startup requests fails
     }
-  }, [loadBillingHistory, loadPlanConfig, reload, syncSubscriptionStatus]);
+  }, [loadBillingHistory, loadPlanConfig, onRequireVerification, reload, syncSubscriptionStatus]);
 
   useEffect(() => {
     void initializeScreen();
@@ -654,6 +683,10 @@ export default function SubscriptionScreen({ navigation, onBack, onAddPaymentMet
       });
 
       if (json?.success !== true) {
+        if (isVerificationRequiredApiError({ payload: json, message: json?.message })) {
+          onRequireVerification?.();
+          return;
+        }
         const message = json?.message || "Unable to start subscription.";
         throw new Error(message);
       }
@@ -670,6 +703,10 @@ export default function SubscriptionScreen({ navigation, onBack, onAddPaymentMet
         `Your ${planConfig.name} subscription is active now.`
       );
     } catch (e: any) {
+      if (isVerificationRequiredApiError(e)) {
+        onRequireVerification?.();
+        return;
+      }
       showPopup("Subscription", e?.message || "Unable to start subscription.");
     } finally {
       setIsProcessing(false);
@@ -697,18 +734,26 @@ export default function SubscriptionScreen({ navigation, onBack, onAddPaymentMet
         }
 
         if (response?.success === false) {
+          if (isVerificationRequiredApiError({ payload: response, message: response?.message })) {
+            onRequireVerification?.();
+            return;
+          }
           throw new Error(response?.message || `Unable to ${action} subscription.`);
         }
 
         await syncSubscriptionStatus(planConfig);
         await loadBillingHistory();
       } catch (error: any) {
+        if (isVerificationRequiredApiError(error)) {
+          onRequireVerification?.();
+          return;
+        }
         showPopup("Subscription", error?.message || "Unable to update subscription.");
       } finally {
         setIsProcessing(false);
       }
     },
-    [getRequestContext, isProcessing, loadBillingHistory, planConfig, syncSubscriptionStatus]
+    [getRequestContext, isProcessing, loadBillingHistory, onRequireVerification, planConfig, syncSubscriptionStatus]
   );
 
   const confirmPause = () => {

@@ -24,7 +24,9 @@ import { ImagePicker } from "../_utils/safeImagePicker";
 import { Location } from "../_utils/safeLocation";
 
 import { Fonts } from "@/constants/theme";
-import { GOOGLE_MAPS_KEY, login as loginRequest, signupClient, updateClientProfile } from "../_Api";
+import AvailableStateSelector from "@/components/AvailableStateSelector";
+import { GOOGLE_MAPS_KEY, login as loginRequest, signupClient, updateClientProfile, type AvailableState } from "../_Api";
+import { addressComponentsMatchState, findAvailableState, predictionMatchesState } from "@/lib/enabledStateLocation";
 
 /* ---------- ICON HELPER ---------- */
 
@@ -161,6 +163,8 @@ const CreateClientProfileScreen: React.FC<Props> = ({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [phone, setPhone] = useState("");
   const [country, setCountry] = useState("");
+  const [state, setState] = useState("");
+  const [availableStates, setAvailableStates] = useState<AvailableState[]>([]);
   const [city, setCity] = useState("");
   const [gender, setGender] = useState("");
   const [kids, setKids] = useState("");
@@ -376,8 +380,12 @@ const CreateClientProfileScreen: React.FC<Props> = ({
     return "";
   };
 
-  const formatAddressLine = (street?: string, city?: string, countryName?: string) =>
-    [street, city, countryName].filter(Boolean).join(", ");
+  const formatAddressLine = (
+    street?: string,
+    city?: string,
+    countryName?: string,
+    stateName?: string,
+  ) => [street, city, stateName, countryName].filter(Boolean).join(", ");
 
   const extractBestCity = (value: any): string =>
     String(
@@ -410,13 +418,15 @@ const CreateClientProfileScreen: React.FC<Props> = ({
     if (!GOOGLE_MAPS_KEY) return [];
     const trimmed = String(query || "").trim();
     if (trimmed.length < 2) return [];
+    const selectedState = findAvailableState(availableStates, state);
+    if (!selectedState) return [];
 
     try {
-      const countryCode = selectedCountryCode(countryText);
+      const countryCode = selectedCountryCode(countryText) || "us";
       const components = countryCode ? `&components=country:${countryCode}` : "";
       const buildUrl = (types?: string) =>
         "https://maps.googleapis.com/maps/api/place/autocomplete/json?input=" +
-        `${encodeURIComponent(trimmed)}` +
+        `${encodeURIComponent(`${trimmed}, ${selectedState.name}`)}` +
         "&language=en" +
         components +
         (types ? `&types=${encodeURIComponent(types)}` : "") +
@@ -427,6 +437,11 @@ const CreateClientProfileScreen: React.FC<Props> = ({
       });
       if (!addressRes.ok) return [];
       const addressJson = await addressRes.json().catch(() => null);
+      if (addressJson?.status === "REQUEST_DENIED") {
+        setLocationError("Address search is temporarily unavailable. Please try again later.");
+        return [];
+      }
+      setLocationError("");
       let predictions = Array.isArray(addressJson?.predictions) ? addressJson.predictions : [];
 
       if (predictions.length === 0) {
@@ -440,6 +455,7 @@ const CreateClientProfileScreen: React.FC<Props> = ({
       }
 
       return predictions
+        .filter((item: any) => predictionMatchesState(item, selectedState))
         .slice(0, LOCATION_AUTOCOMPLETE_LIMIT)
         .map((item: any) => ({
           placeId: String(item?.place_id || ""),
@@ -468,6 +484,8 @@ const CreateClientProfileScreen: React.FC<Props> = ({
       if (!details) return null;
 
       const components = details?.address_components || [];
+      const selectedState = findAvailableState(availableStates, state);
+      if (!addressComponentsMatchState(components, selectedState)) return null;
       const findComponent = (type: string) =>
         components.find(
           (item: any) => Array.isArray(item?.types) && item.types.includes(type)
@@ -481,11 +499,17 @@ const CreateClientProfileScreen: React.FC<Props> = ({
         findComponent("administrative_area_level_2")?.long_name ||
         "";
       const countryComponent = findComponent("country");
+      const stateComponent = findComponent("administrative_area_level_1");
       const countryText = mapCountryOption(
         countryComponent?.long_name,
         countryComponent?.short_name
       );
-      const formatted = formatAddressLine(streetText, cityText, countryText);
+      const formatted = formatAddressLine(
+        streetText,
+        cityText,
+        countryText,
+        stateComponent?.long_name,
+      );
       return { address: formatted || details?.formatted_address || "", country: countryText };
     } catch {
       return null;
@@ -506,6 +530,11 @@ const CreateClientProfileScreen: React.FC<Props> = ({
       hideLocationSuggestions();
       setCity(fallbackLabel);
       const details = await fetchLocationDetails(item.placeId);
+      if (!details) {
+        setCity("");
+        setLocationError("Please select an address from the selected available state.");
+        return;
+      }
       const nextAddress = String(details?.address || fallbackLabel).trim();
       if (nextAddress) setCity(nextAddress);
       if (details?.country) setCountry(details.country);
@@ -535,7 +564,7 @@ const CreateClientProfileScreen: React.FC<Props> = ({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [city, country, showLocationSuggestions]);
+  }, [city, country, state, availableStates, showLocationSuggestions]);
 
   const fetchNativeReverseAddress = async (latitude: number, longitude: number) => {
     try {
@@ -749,6 +778,10 @@ const CreateClientProfileScreen: React.FC<Props> = ({
       showError("Passwords do not match");
       return;
     }
+    if (!state) {
+      showError("Please select an available state");
+      return;
+    }
 
     setLoading(true);
     try {
@@ -847,6 +880,7 @@ const CreateClientProfileScreen: React.FC<Props> = ({
           email: bootstrapEmail,
           password: bootstrapPassword,
           password_confirmation: bootstrapPasswordConfirmation || bootstrapPassword,
+          state,
         });
 
         const signupToken = resolveAuthToken(signupResp);
@@ -897,6 +931,7 @@ const CreateClientProfileScreen: React.FC<Props> = ({
           email: draftEmail,
           password: effectivePassword,
           password_confirmation: effectivePasswordConfirmation || effectivePassword,
+          state,
         });
         let freshToken = resolveAuthToken(signupResp) || token || "";
         let freshUserId = resolveAuthUserId(signupResp) || userId || "";
@@ -1112,6 +1147,14 @@ const CreateClientProfileScreen: React.FC<Props> = ({
               </View>
             )}
           </View>
+          <AvailableStateSelector
+            value={state}
+            onSelect={(nextState) => {
+              if (state && nextState !== state) setCity("");
+              setState(nextState);
+            }}
+            onStatesLoaded={setAvailableStates}
+          />
           <View>
             <View style={styles.inputBox}>
               <Icon name="business-outline" />

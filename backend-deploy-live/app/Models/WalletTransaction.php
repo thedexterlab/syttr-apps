@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class WalletTransaction extends Model
 {
@@ -30,4 +31,9 @@ class WalletTransaction extends Model
         'amount' => 'decimal:2',
         'meta' => 'array',
     ];
+
+    public function job(): BelongsTo
+    {
+        return $this->belongsTo(ParentJob::class, 'job_id');
+    }
 }

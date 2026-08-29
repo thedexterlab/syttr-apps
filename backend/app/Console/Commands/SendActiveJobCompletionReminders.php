@@ -39,9 +39,7 @@ class SendActiveJobCompletionReminders extends Command
 
     public function handle(): int
     {
-        $timezone = config('app.timezone');
         $acceptedStatuses = ['accepted', 'accept', 'approved', 'confirmed', 'confirm'];
-        $now = Carbon::now($timezone);
 
         $jobs = ParentJob::query()
             ->whereNotIn('status', ['canceled', 'cancelled', 'completed'])
@@ -59,6 +57,8 @@ class SendActiveJobCompletionReminders extends Command
 
         $sent = 0;
         foreach ($jobs as $job) {
+            $timezone = $this->jobTimezone($job);
+            $now = Carbon::now($timezone);
             $startAt = $this->buildJobStartAt($job, $timezone);
             $endAt = $this->buildJobEndAt($job, $timezone, $startAt);
             if (! $startAt || ! $endAt) {
@@ -116,6 +116,11 @@ class SendActiveJobCompletionReminders extends Command
 
         $this->info('Active job completion notifications/charges processed: '.$sent);
         return self::SUCCESS;
+    }
+
+    private function jobTimezone(ParentJob $job): string
+    {
+        return $job->localTimezone();
     }
 
     private function buildJobStartAt(ParentJob $job, string $timezone): ?Carbon
@@ -229,6 +234,7 @@ class SendActiveJobCompletionReminders extends Command
                     'application_id' => $application->id,
                     'nanny_id' => $application->nanny_id,
                     'scheduled_end_at' => $scheduledEndAt->toISOString(),
+                    'timezone' => $scheduledEndAt->timezoneName,
                     'reminder_slot' => $slot,
                 ],
                 $application->nanny_id
@@ -247,6 +253,7 @@ class SendActiveJobCompletionReminders extends Command
                     'application_id' => $application->id,
                     'parent_user_id' => $job->user_id,
                     'scheduled_end_at' => $scheduledEndAt->toISOString(),
+                    'timezone' => $scheduledEndAt->timezoneName,
                     'reminder_slot' => $slot,
                 ],
                 $job->user_id
@@ -288,6 +295,7 @@ class SendActiveJobCompletionReminders extends Command
                     'application_id' => $application->id,
                     'nanny_id' => $application->nanny_id,
                     'scheduled_start_at' => $scheduledStartAt->toISOString(),
+                    'timezone' => $scheduledStartAt->timezoneName,
                 ],
                 $application->nanny_id
             );
@@ -305,6 +313,7 @@ class SendActiveJobCompletionReminders extends Command
                     'application_id' => $application->id,
                     'parent_user_id' => $job->user_id,
                     'scheduled_start_at' => $scheduledStartAt->toISOString(),
+                    'timezone' => $scheduledStartAt->timezoneName,
                 ],
                 $job->user_id
             );
@@ -336,6 +345,7 @@ class SendActiveJobCompletionReminders extends Command
                 'application_id' => $application->id,
                 'parent_user_id' => $job->user_id,
                 'scheduled_start_at' => $scheduledStartAt->toISOString(),
+                'timezone' => $scheduledStartAt->timezoneName,
                 'reminder_slot' => 'before_start_60m',
             ],
             $job->user_id
@@ -468,6 +478,7 @@ class SendActiveJobCompletionReminders extends Command
                 'meta' => [
                     'penalty_hours' => $penaltyHours,
                     'scheduled_end_at' => $scheduledEndAt->toISOString(),
+                    'timezone' => $scheduledEndAt->timezoneName,
                 ],
             ]);
 
@@ -543,6 +554,7 @@ class SendActiveJobCompletionReminders extends Command
                     'penalty_hours' => $penaltyHours,
                     'hourly_rate' => $hourlyRate,
                     'scheduled_end_at' => $scheduledEndAt->toISOString(),
+                    'timezone' => $scheduledEndAt->timezoneName,
                     'penalty_beneficiary' => 'Syttr LLC',
                 ],
             ]);
@@ -572,6 +584,7 @@ class SendActiveJobCompletionReminders extends Command
                             'penalty_hours' => $penaltyHours,
                             'hourly_rate' => $hourlyRate,
                             'scheduled_end_at' => $scheduledEndAt->toISOString(),
+                            'timezone' => $scheduledEndAt->timezoneName,
                             'penalty_beneficiary' => 'Syttr LLC',
                             'nanny_original_payout_unchanged' => true,
                         ],
@@ -591,6 +604,7 @@ class SendActiveJobCompletionReminders extends Command
                     'amount' => $amount,
                     'penalty_hours' => $penaltyHours,
                     'scheduled_end_at' => $scheduledEndAt->toISOString(),
+                    'timezone' => $scheduledEndAt->timezoneName,
                 ],
                 $application->nanny_id
             );

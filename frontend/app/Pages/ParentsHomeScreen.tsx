@@ -151,6 +151,10 @@ const ParentHomeScreen: React.FC<Props> = ({
   const cardsBottom = bottomBarHeight + rs(4);
   const verifyBottom = Math.max(rs(220), cardsBottom + rs(136));
   const isActionDisabled = verificationStatus !== "verified";
+  const tazStatusLabel = String(tazStatus || "")
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 
   useEffect(() => {
     return () => {
@@ -163,8 +167,6 @@ const ParentHomeScreen: React.FC<Props> = ({
     if (
       val === "verified" ||
       val === "approved" ||
-      val === "completed" ||
-      val === "quickapp-completed" ||
       val.includes("accept")
     ) {
       return "verified";
@@ -172,6 +174,14 @@ const ParentHomeScreen: React.FC<Props> = ({
     if (
       val === "app-pending" ||
       val === "pending" ||
+      val === "completed" ||
+      val === "quickapp-completed" ||
+      val.includes("background_check") ||
+      val.includes("background check") ||
+      val.includes("admin_approval_pending") ||
+      val.includes("admin approval pending") ||
+      val.includes("payment_required") ||
+      val.includes("payment required") ||
       val.includes("quickapp.created") ||
       val.includes("order.quickapp.completed")
     )
@@ -230,6 +240,17 @@ const ParentHomeScreen: React.FC<Props> = ({
         setTazStatus("blacklisted");
         await AsyncStorage.setItem("user_verification_status", "blacklisted");
         onBlacklisted?.();
+        return true;
+      }
+      if (
+        profileVerificationRequired === true ||
+        (profileVerificationRequired !== false && profileVerifiedFlag === false)
+      ) {
+        const pendingStatus = profileStatus && profileStatus !== "unknown" ? profileStatus : "pending";
+        setTazStatus(pendingStatus);
+        setVerificationStatus(normalizeStatus(pendingStatus));
+        await AsyncStorage.setItem("user_verification_status", pendingStatus);
+        onGetVerified?.();
         return true;
       }
       if (profileIsVerified) {
@@ -999,9 +1020,7 @@ const ParentHomeScreen: React.FC<Props> = ({
         </View>
       )}
 
-      {verificationStatus !== "verified" &&
-        tazStatus !== "quickapp-completed" &&
-        tazStatus !== "completed" && (
+      {verificationStatus !== "verified" && (
           <View
             style={[
               styles.verifyBanner,
@@ -1017,7 +1036,9 @@ const ParentHomeScreen: React.FC<Props> = ({
               </Text>
               <Text style={styles.verifySub}>
                 {verificationStatus === "pending"
-                  ? "We are reviewing your background check."
+                  ? tazStatusLabel
+                    ? `Status: ${tazStatusLabel}. We are reviewing your verification.`
+                    : "We are reviewing your verification."
                   : "Complete a background check to become verified."}
               </Text>
             </View>

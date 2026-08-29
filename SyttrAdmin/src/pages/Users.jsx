@@ -551,9 +551,9 @@ function Users() {
         )
         setParents(normalized)
         void hydrateUserMetrics(normalized)
-      } catch {
+      } catch (error) {
         if (!isMounted) return
-        setError('Unable to load users.')
+        setError(error?.data?.message || error?.message || 'Unable to load users.')
         setParents([])
       } finally {
         if (isMounted) setLoading(false)

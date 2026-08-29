@@ -43,6 +43,7 @@ export default function RootLayout() {
           <Stack initialRouteName="index">
             <Stack.Screen name="index" options={{ headerShown: false, gestureEnabled: false }} />
             <Stack.Screen name="(tabs)" options={{ headerShown: false, gestureEnabled: false }} />
+            <Stack.Screen name="background-check" options={{ headerShown: false }} />
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
           </Stack>
           <StatusBar style="dark" backgroundColor="#FFFFFF" />
@@ -51,4 +52,3 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 }
-

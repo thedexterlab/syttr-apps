@@ -12,6 +12,7 @@ export type ParentRequestNotification = {
   message?: string;
   time?: string;
   created_at?: string;
+  notification_id?: number | string;
   isRead?: boolean;
   is_read?: number | boolean | string;
   type?: string;

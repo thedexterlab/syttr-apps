@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useMemo, useState } from "react";
 import { Alert, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { apiRequest, BASE_URL, getRuntimeApiKey, sanitizeToken } from "../Api";
+import { apiRequest, BASE_URL, getRuntimeApiKey, isVerificationRequiredApiError, sanitizeToken } from "../Api";
 import { formatDateToMDY } from "../utils/dateFormat";
 import { geocodeAddress } from "../utils/geocodeAddress";
 import {
@@ -26,6 +26,7 @@ type Props = {
   onNotifications?: () => void;
   onCalendar?: () => void;
   onSettings?: () => void;
+  onRequireVerification?: () => void;
 };
 
 const hasValue = (value: any) =>
@@ -318,6 +319,7 @@ export default function ParentJobRequestDetailScreen({
   onNotifications,
   onCalendar,
   onSettings,
+  onRequireVerification,
 }: Props) {
   const [requestCount, setRequestCount] = useState(0);
   const [messageCount, setMessageCount] = useState(0);
@@ -774,6 +776,10 @@ export default function ParentJobRequestDetailScreen({
       }));
       Alert.alert("Success", decision === "accept" ? "Request accepted." : "Request rejected.");
     } catch (e: any) {
+      if (isVerificationRequiredApiError(e)) {
+        onRequireVerification?.();
+        return;
+      }
       Alert.alert("Request", e?.message || "Unable to update request.");
     } finally {
       setDecisionLoading(null);

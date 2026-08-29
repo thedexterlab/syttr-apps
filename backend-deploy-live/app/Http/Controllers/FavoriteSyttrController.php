@@ -45,7 +45,7 @@ class FavoriteSyttrController extends Controller
                     'city' => $profile?->city ?: $profile?->address,
                     'age' => $age,
                     'experience' => $profile?->experience_years,
-                    'profile_image' => $profile?->user_image_url ?: $profile?->user_image,
+                    'profile_image' => $profile?->user_image_url,
                 ];
             });
 

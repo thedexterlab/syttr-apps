@@ -18,7 +18,7 @@ import {
 } from "react-native";
 import { hp, rf, rs, wp } from "../utils/responsive";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { apiRequest, BASE_URL, getRuntimeApiKey, sanitizeToken } from "../Api";
+import { apiRequest, BASE_URL, getRuntimeApiKey, isVerificationRequiredApiError, sanitizeToken } from "../Api";
 import { fetchUnreadParentRequestCount } from "../../lib/parentRequestNotifications";
 import { fetchUnreadConversationCount } from "../../lib/chatUnreadCount";
 import { subscribeToNotifications } from "../../lib/pusherClient";
@@ -62,6 +62,7 @@ type Props = {
   onNotifications?: () => void;
   onCalendar?: () => void;
   onSettings?: () => void;
+  onRequireVerification?: () => void;
 };
 
 const API_BASE = BASE_URL.endsWith("/") ? BASE_URL : `${BASE_URL}`;
@@ -125,6 +126,7 @@ export default function ClientMessagesScreen({
   onNotifications,
   onCalendar,
   onSettings,
+  onRequireVerification,
 }: Props) {
   const insets = useSafeAreaInsets();
   const bottomBarOffset = -Math.max(insets.bottom, 0);
@@ -248,6 +250,12 @@ export default function ClientMessagesScreen({
       setThreads(normalizedList);
       setFiltered(normalizedList);
     } catch (e) {
+      if (isVerificationRequiredApiError(e)) {
+        setThreads([]);
+        setFiltered([]);
+        onRequireVerification?.();
+        return;
+      }
       console.log("threads load error", e);
       Alert.alert("Messages", "We couldn't load your conversations. Please pull to refresh.");
     } finally {

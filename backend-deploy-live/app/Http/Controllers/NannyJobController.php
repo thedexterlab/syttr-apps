@@ -149,6 +149,7 @@ class NannyJobController extends Controller
                         'end_date' => optional($job->end_date)->format('Y-m-d'),
                         'start_time' => (string) $job->start_time,
                         'end_time' => (string) ($job->end_time ?? ''),
+                        'timezone' => $job->localTimezone(),
                         'location' => $job->location,
                         'latitude' => $job->latitude !== null ? (float) $job->latitude : null,
                         'longitude' => $job->longitude !== null ? (float) $job->longitude : null,
@@ -241,14 +242,15 @@ class NannyJobController extends Controller
                 return ['error' => ['message' => 'Only accepted jobs can be canceled by sitter.', 'status' => 422]];
             }
 
-            $startAt = $this->buildJobStartAt($job, config('app.timezone'));
+            $jobTimezone = $this->jobTimezone($job);
+            $startAt = $this->buildJobStartAt($job, $jobTimezone);
             $within24h = false;
             if ($startAt) {
-                $within24h = Carbon::now(config('app.timezone'))->greaterThanOrEqualTo($startAt->copy()->subHours(24));
+                $within24h = Carbon::now($jobTimezone)->greaterThanOrEqualTo($startAt->copy()->subHours(24));
             }
 
             $application->status = 'cancelled';
-            $application->nanny_canceled_at = Carbon::now(config('app.timezone'));
+            $application->nanny_canceled_at = Carbon::now($jobTimezone);
             $application->nanny_canceled_within_24h = $within24h;
             $application->nanny_reliability_penalty = $within24h ? 1 : 0;
             $application->save();
@@ -418,7 +420,7 @@ class NannyJobController extends Controller
                 'experience' => $nannyProfile?->experience_years,
                 'hourly_rate' => $nannyProfile?->hourly_rate !== null ? (float) $nannyProfile->hourly_rate : null,
                 'bio' => $nannyProfile?->bio,
-                'profile_image' => $nannyProfile?->user_image_url ?: $nannyProfile?->user_image,
+                'profile_image' => $nannyProfile?->user_image_url,
                 'user_image' => $nannyProfile?->user_image,
                 'user_image_url' => $nannyProfile?->user_image_url,
             ];
@@ -473,10 +475,11 @@ class NannyJobController extends Controller
                     'end_date' => optional($job->end_date)->format('Y-m-d'),
                     'start_time' => (string) $job->start_time,
                     'end_time' => (string) ($job->end_time ?? ''),
+                    'timezone' => $job->localTimezone(),
                     'location' => $job->location,
                     'latitude' => $job->latitude !== null ? (float) $job->latitude : null,
                     'longitude' => $job->longitude !== null ? (float) $job->longitude : null,
-                    'parent_image' => $parentProfile?->user_image,
+                    'parent_image' => $parentProfile?->user_image_url,
                     'parent_image_url' => $parentProfile?->user_image_url,
                     'parent_average_rating' => $parentStats['average_rating'],
                     'parent_jobs_posted_count' => $parentStats['jobs_posted_count'],
@@ -503,7 +506,7 @@ class NannyJobController extends Controller
                     'address' => $parentProfile?->address,
                     'user_image' => $parentProfile?->user_image,
                     'user_image_url' => $parentProfile?->user_image_url,
-                    'profile_image' => $parentProfile?->user_image_url ?: $parentProfile?->user_image,
+                    'profile_image' => $parentProfile?->user_image_url,
                     'average_rating' => $parentStats['average_rating'],
                     'jobs_posted_count' => $parentStats['jobs_posted_count'],
                     // Keep ratings_count as unique raters for direct parent block usage.
@@ -843,6 +846,7 @@ class NannyJobController extends Controller
                     'end_date' => optional($job->end_date)->format('Y-m-d'),
                     'start_time' => (string) $job->start_time,
                     'end_time' => (string) ($job->end_time ?? ''),
+                    'timezone' => $job->localTimezone(),
                     'location' => $job->location,
                     'latitude' => $job->latitude !== null ? (float) $job->latitude : null,
                     'longitude' => $job->longitude !== null ? (float) $job->longitude : null,
@@ -859,7 +863,7 @@ class NannyJobController extends Controller
                     'fullname' => $displayNanny,
                     'city' => $nannyProfile?->city,
                     'country' => $nannyProfile?->country,
-                    'profile_image' => $nannyProfile?->user_image_url ?: $nannyProfile?->user_image,
+                    'profile_image' => $nannyProfile?->user_image_url,
                     'user_image' => $nannyProfile?->user_image,
                     'user_image_url' => $nannyProfile?->user_image_url,
                 ],
@@ -1116,5 +1120,10 @@ class NannyJobController extends Controller
             'ratings_count' => $ratingsCount,
             'raters_count' => $ratersCount,
         ];
+    }
+
+    private function jobTimezone(ParentJob $job): string
+    {
+        return $job->localTimezone();
     }
 }

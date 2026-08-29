@@ -12,11 +12,39 @@ class AppDataHelper
 {
     public static function hasTable(string $table): bool
     {
+        if (! static::canReachAppDataDatabase()) {
+            return false;
+        }
+
         try {
             return Schema::connection('app_data')->hasTable($table);
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    public static function canReachAppDataDatabase(): bool
+    {
+        if (config('database.connections.app_data.driver') !== 'mysql') {
+            return true;
+        }
+
+        $host = trim((string) config('database.connections.app_data.host', ''));
+        $port = (int) config('database.connections.app_data.port', 3306);
+        $timeout = max(1, (int) env('APP_DATA_DB_TIMEOUT', 5));
+
+        if ($host === '') {
+            return false;
+        }
+
+        $connection = @fsockopen($host, $port, $errorCode, $errorMessage, $timeout);
+        if (! is_resource($connection)) {
+            return false;
+        }
+
+        fclose($connection);
+
+        return true;
     }
 
     public static function assetBaseUrl(): string

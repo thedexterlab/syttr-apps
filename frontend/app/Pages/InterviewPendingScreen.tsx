@@ -1,11 +1,11 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -41,6 +41,7 @@ const normalizeApprovalState = (value?: string): ApprovalState => {
 };
 
 const InterviewPendingScreen: React.FC<Props> = ({ onBack, onDone, onRejected }) => {
+  const router = useRouter();
   const [statusText, setStatusText] = useState("Pending approval");
   const [approvalState, setApprovalState] = useState<ApprovalState>("pending");
   const [gettingNewLink, setGettingNewLink] = useState(false);
@@ -209,7 +210,7 @@ const InterviewPendingScreen: React.FC<Props> = ({ onBack, onDone, onRejected })
       if (data?.taz_order_guid) {
         await AsyncStorage.setItem("taz_order_guid", String(data.taz_order_guid));
       }
-      await Linking.openURL(nextQuickappLink);
+      router.push({ pathname: "/background-check" as any, params: { url: nextQuickappLink } });
     } catch (e: any) {
       Alert.alert("Verification", e?.message || "Something went wrong.");
     } finally {

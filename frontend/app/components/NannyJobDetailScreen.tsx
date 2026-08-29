@@ -414,9 +414,15 @@ export default function NannyJobDetailScreen({
         const normalizedApiMessage = String(apiMessage).toLowerCase();
         const normalizedCode = String(data?.code || "").toLowerCase();
         if (
-          normalizedCode === "nanny_verification_required" ||
+          normalizedCode.includes("verification_required") ||
           normalizedApiMessage.includes("nanny_verification_required") ||
-          normalizedApiMessage.includes("verification is required before accessing nanny features")
+          normalizedApiMessage.includes("verification is required before accessing") ||
+          normalizedApiMessage.includes("verification required") ||
+          (
+            normalizedApiMessage.includes("payment") &&
+            normalizedApiMessage.includes("background check") &&
+            normalizedApiMessage.includes("admin approval")
+          )
         ) {
           onRequireVerification?.();
           return;
@@ -430,11 +436,22 @@ export default function NannyJobDetailScreen({
       Alert.alert("Applied", String(successMessage));
     } catch (e: any) {
       const normalizedMessage = String(e?.message || "").toLowerCase();
-      const normalizedCode = String(e?.code || e?.response?.data?.code || "").toLowerCase();
+      const normalizedCode = String(
+        e?.code ||
+          e?.payload?.code ||
+          e?.response?.data?.code ||
+          ""
+      ).toLowerCase();
       if (
-        normalizedCode === "nanny_verification_required" ||
+        normalizedCode.includes("verification_required") ||
         normalizedMessage.includes("nanny_verification_required") ||
-        normalizedMessage.includes("verification is required before accessing nanny features")
+        normalizedMessage.includes("verification is required before accessing") ||
+        normalizedMessage.includes("verification required") ||
+        (
+          normalizedMessage.includes("payment") &&
+          normalizedMessage.includes("background check") &&
+          normalizedMessage.includes("admin approval")
+        )
       ) {
         onRequireVerification?.();
         return;

@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { getClientProfile, getUserKids } from "../Api";
+import { getClientProfile, getUserKids, isVerificationRequiredApiError } from "../Api";
 import { formatDateToMDY } from "../utils/dateFormat";
 import { rf, rs } from "../utils/responsive";
 import { resolveSessionImageUrl } from "../../lib/nannySessionProfile";
@@ -19,6 +19,7 @@ import { resolveSessionImageUrl } from "../../lib/nannySessionProfile";
 type Props = {
   parent?: any;
   onBack?: () => void;
+  onRequireVerification?: () => void;
 };
 
 type ParentChild = {
@@ -210,7 +211,7 @@ const InfoRow = ({ label, value }: { label: string; value?: string }) => {
   );
 };
 
-export default function ParentProfileViewScreen({ parent, onBack }: Props) {
+export default function ParentProfileViewScreen({ parent, onBack, onRequireVerification }: Props) {
   const insets = useSafeAreaInsets();
   const initialProfile = useMemo(() => normalizeParentProfile(parent), [parent]);
   const [profile, setProfile] = useState<ParentProfile>(initialProfile);
@@ -240,6 +241,14 @@ export default function ParentProfileViewScreen({ parent, onBack }: Props) {
 
         if (!active) return;
 
+        if (
+          (profileResult.status === "rejected" && isVerificationRequiredApiError(profileResult.reason)) ||
+          (kidsResult.status === "rejected" && isVerificationRequiredApiError(kidsResult.reason))
+        ) {
+          onRequireVerification?.();
+          return;
+        }
+
         if (profileResult.status === "fulfilled") {
           setProfile((prev) => mergeParentProfile(prev, normalizeParentProfile(profileResult.value)));
         }
@@ -257,7 +266,7 @@ export default function ParentProfileViewScreen({ parent, onBack }: Props) {
     return () => {
       active = false;
     };
-  }, [parent]);
+  }, [parent, onRequireVerification]);
 
   const displayName = profile.name || "Parent";
   const joinedLabel = profile.createdAt ? formatDateToMDY(profile.createdAt) : "";

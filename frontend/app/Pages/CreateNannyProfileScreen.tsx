@@ -23,6 +23,9 @@ import {
 } from "react-native";
 import SafeScreen from "../_utils/SafeScreen";
 import { GOOGLE_MAPS_KEY, registerNannyWithProfile, updateNannyProfile } from "../Api";
+import AvailableStateSelector from "@/components/AvailableStateSelector";
+import { addressComponentsMatchState, findAvailableState, predictionMatchesState } from "@/lib/enabledStateLocation";
+import type { AvailableState } from "../_Api";
 import { rf, rs } from "../utils/responsive";
 import { DocumentPicker } from "../utils/safeDocumentPicker";
 import { FileSystem } from "../utils/safeFileSystem";
@@ -134,6 +137,8 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
   const [city, setCity] = useState("");
   const [gender, setGender] = useState("");
   const [country, setCountry] = useState("");
+  const [state, setState] = useState("");
+  const [availableStates, setAvailableStates] = useState<AvailableState[]>([]);
   const [experience, setExperience] = useState("");
   const [bio, setBio] = useState("");
   const [referral, setReferral] = useState("");
@@ -149,6 +154,7 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
   const [locationSuggestions, setLocationSuggestions] = useState<LocationSuggestion[]>([]);
   const [loadingLocationSuggestions, setLoadingLocationSuggestions] = useState(false);
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
+  const [locationSearchError, setLocationSearchError] = useState("");
 
   const [loading, setLoading] = useState(false);
   const didHydrateStoredPrefill = useRef(false);
@@ -562,8 +568,12 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
     return "";
   };
 
-  const formatAddressLine = (street?: string, cityText?: string, countryText?: string) =>
-    [street, cityText, countryText].filter(Boolean).join(", ");
+  const formatAddressLine = (
+    street?: string,
+    cityText?: string,
+    countryText?: string,
+    stateText?: string,
+  ) => [street, cityText, stateText, countryText].filter(Boolean).join(", ");
 
   const fetchLocationSuggestions = async (
     query: string,
@@ -572,13 +582,15 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
     if (!GOOGLE_MAPS_KEY) return [];
     const trimmed = String(query || "").trim();
     if (trimmed.length < 2) return [];
+    const selectedState = findAvailableState(availableStates, state);
+    if (!selectedState) return [];
 
     try {
-      const countryCode = selectedCountryCode(countryText);
+      const countryCode = selectedCountryCode(countryText) || "us";
       const components = countryCode ? `&components=country:${countryCode}` : "";
       const buildUrl = (types?: string) =>
         "https://maps.googleapis.com/maps/api/place/autocomplete/json?input=" +
-        `${encodeURIComponent(trimmed)}` +
+        `${encodeURIComponent(`${trimmed}, ${selectedState.name}`)}` +
         "&language=en" +
         components +
         (types ? `&types=${encodeURIComponent(types)}` : "") +
@@ -589,6 +601,11 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
       });
       if (!addressRes.ok) return [];
       const addressJson = await addressRes.json().catch(() => null);
+      if (addressJson?.status === "REQUEST_DENIED") {
+        setLocationSearchError("Address search is temporarily unavailable. Please try again later.");
+        return [];
+      }
+      setLocationSearchError("");
       let predictions = Array.isArray(addressJson?.predictions) ? addressJson.predictions : [];
 
       if (predictions.length === 0) {
@@ -602,6 +619,7 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
       }
 
       return predictions
+        .filter((item: any) => predictionMatchesState(item, selectedState))
         .slice(0, LOCATION_AUTOCOMPLETE_LIMIT)
         .map((item: any) => ({
           placeId: String(item?.place_id || ""),
@@ -630,6 +648,8 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
       if (!details) return null;
 
       const components = details?.address_components || [];
+      const selectedState = findAvailableState(availableStates, state);
+      if (!addressComponentsMatchState(components, selectedState)) return null;
       const findComponent = (type: string) =>
         components.find((item: any) => Array.isArray(item?.types) && item.types.includes(type));
 
@@ -642,8 +662,14 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
         findComponent("administrative_area_level_2")?.long_name ||
         "";
       const countryComponent = findComponent("country");
+      const stateComponent = findComponent("administrative_area_level_1");
       const countryText = mapCountryOption(countryComponent?.long_name, countryComponent?.short_name);
-      const formatted = formatAddressLine(streetText, cityText, countryText);
+      const formatted = formatAddressLine(
+        streetText,
+        cityText,
+        countryText,
+        stateComponent?.long_name,
+      );
 
       return {
         address: formatted || details?.formatted_address || "",
@@ -669,6 +695,11 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
       hideLocationSuggestions();
       setAddress(fallbackLabel);
       const details = await fetchLocationDetails(item.placeId);
+      if (!details) {
+        setAddress("");
+        Alert.alert("Location", "Please select an address from the selected available state.");
+        return;
+      }
       const nextAddress = String(details?.address || fallbackLabel).trim();
       if (nextAddress) setAddress(nextAddress);
       if (details?.city) setCity(details.city);
@@ -699,7 +730,7 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [address, country, showLocationSuggestions]);
+  }, [address, country, state, availableStates, showLocationSuggestions]);
 
   const fetchPlacesAddressWeb = async (latitude: number, longitude: number) => {
     if (!GOOGLE_MAPS_KEY || typeof document === "undefined") return null;
@@ -917,6 +948,7 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
       !phone ||
       !gender ||
       !country ||
+      !state ||
       !address ||
       !experience ||
       !bio ||
@@ -1039,6 +1071,7 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
           address: payload.address,
           city: payload.city,
           country: payload.country,
+          state,
           user_image_base64: (payload as any).user_image_base64,
           certificate_base64: (payload as any).certificate_base64,
         };
@@ -1253,6 +1286,18 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
                   editable
                 />
 
+                <AvailableStateSelector
+                  value={state}
+                  onSelect={(nextState) => {
+                    if (state && nextState !== state) {
+                      setAddress("");
+                      setCity("");
+                    }
+                    setState(nextState);
+                  }}
+                  onStatesLoaded={setAvailableStates}
+                />
+
                 <View style={{ marginBottom: rs(14) }}>
                   <Text style={styles.label}>Address *</Text>
                   <TextInput
@@ -1316,6 +1361,9 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
                       )}
                     </View>
                   ) : null}
+                  {!!locationSearchError && (
+                    <Text style={styles.locationSuggestionLoadingText}>{locationSearchError}</Text>
+                  )}
                 </View>
 
                 <FormInput

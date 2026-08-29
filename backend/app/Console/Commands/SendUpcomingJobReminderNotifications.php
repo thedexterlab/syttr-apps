@@ -18,10 +18,8 @@ class SendUpcomingJobReminderNotifications extends Command
     public function handle(): int
     {
         $acceptedStatuses = ['accepted', 'accept', 'approved', 'confirmed', 'confirm'];
-        $tomorrow = Carbon::now(config('app.timezone'))->addDay()->toDateString();
 
         $jobs = ParentJob::query()
-            ->whereDate('start_date', $tomorrow)
             ->whereNotIn('status', ['canceled', 'cancelled', 'completed'])
             ->where(function ($query) use ($acceptedStatuses) {
                 $query
@@ -37,6 +35,12 @@ class SendUpcomingJobReminderNotifications extends Command
 
         $sent = 0;
         foreach ($jobs as $job) {
+            $timezone = $this->jobTimezone($job);
+            $tomorrow = Carbon::now($timezone)->addDay()->toDateString();
+            if (optional($job->start_date)->format('Y-m-d') !== $tomorrow) {
+                continue;
+            }
+
             $notificationKey = 'job:'.$job->id.':reminder:'.$tomorrow;
             $alreadySent = UserNotification::query()
                 ->where('recipient_user_id', $job->user_id)
@@ -61,6 +65,7 @@ class SendUpcomingJobReminderNotifications extends Command
                     'job_id' => $job->id,
                     'start_date' => optional($job->start_date)->format('Y-m-d'),
                     'start_time' => (string) $job->start_time,
+                    'timezone' => $timezone,
                     'location' => $job->location,
                     'nanny_id' => $acceptedApplication?->nanny_id,
                     'reminder_for_date' => $tomorrow,
@@ -74,5 +79,10 @@ class SendUpcomingJobReminderNotifications extends Command
         $this->info('Upcoming parent reminders sent: '.$sent);
 
         return self::SUCCESS;
+    }
+
+    private function jobTimezone(ParentJob $job): string
+    {
+        return $job->localTimezone();
     }
 }

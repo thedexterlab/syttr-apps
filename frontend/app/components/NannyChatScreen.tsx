@@ -22,7 +22,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { apiRequest, BASE_URL, sanitizeToken } from "../Api";
+import { apiRequest, BASE_URL, isVerificationRequiredApiError, sanitizeToken } from "../Api";
 import { getPusherDiagnostics, reconnectPusher, subscribeToChat } from "../../lib/pusherClient";
 import { resolveSessionImageUrl } from "../../lib/nannySessionProfile";
 import { rewriteLoopbackAbsoluteUrl } from "../../lib/urlHosts";
@@ -224,6 +224,7 @@ type Props = {
     userId?: number | string;
     name?: string;
   }) => void;
+  onRequireVerification?: () => void;
 };
 
 export default function NannyChatScreen({
@@ -232,6 +233,7 @@ export default function NannyChatScreen({
   onBack,
   onCloseChat,
   onViewProfile,
+  onRequireVerification,
 }: Props) {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
@@ -567,6 +569,11 @@ export default function NannyChatScreen({
       }
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
     } catch (e) {
+      if (isVerificationRequiredApiError(e)) {
+        setMessages([]);
+        onRequireVerification?.();
+        return;
+      }
       console.error("[NannyChat] load error", e instanceof Error ? e.message : e);
       if (!options?.silent) {
         Alert.alert("Chat", "Unable to load messages.");
@@ -868,6 +875,10 @@ export default function NannyChatScreen({
 
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
     } catch (e) {
+      if (isVerificationRequiredApiError(e)) {
+        onRequireVerification?.();
+        return;
+      }
       console.error("[NannyChat] send error", e instanceof Error ? e.message : e);
       Alert.alert("Chat", "Failed to send message.");
     } finally {
@@ -2404,4 +2415,3 @@ const styles = StyleSheet.create({
     fontSize: rf(13),
   },
 });
-

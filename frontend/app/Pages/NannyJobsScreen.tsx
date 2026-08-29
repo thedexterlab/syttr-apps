@@ -248,11 +248,22 @@ export default function NannyJobsScreen({
 
   const isVerificationRequiredError = (error: any) => {
     const message = String(error?.message || "").toLowerCase();
-    const code = String(error?.code || error?.response?.data?.code || "").toLowerCase();
+    const code = String(
+      error?.code ||
+        error?.payload?.code ||
+        error?.response?.data?.code ||
+        ""
+    ).toLowerCase();
     return (
-      code === "nanny_verification_required" ||
+      code.includes("verification_required") ||
       message.includes("nanny_verification_required") ||
-      message.includes("verification is required before accessing nanny features")
+      message.includes("verification is required before accessing") ||
+      message.includes("verification required") ||
+      (
+        message.includes("payment") &&
+        message.includes("background check") &&
+        message.includes("admin approval")
+      )
     );
   };
 
@@ -356,7 +367,10 @@ export default function NannyJobsScreen({
 	  const fetchJobs = async () => {
   setLoading(true);
   try {
-    const token = sanitizeToken((await AsyncStorage.getItem("token")) || undefined);
+    const tokenRaw =
+      (await AsyncStorage.getItem("token")) ||
+      (await AsyncStorage.getItem("nanny_token"));
+    const token = sanitizeToken(tokenRaw || undefined);
     const apiKey =
       (await AsyncStorage.getItem("api_key")) ||
       getRuntimeApiKey() ||
@@ -364,9 +378,13 @@ export default function NannyJobsScreen({
     const storedNannyId = await AsyncStorage.getItem("nanny_id");
     const storedUserId = await AsyncStorage.getItem("user_id");
     const effectiveNannyId = String(storedNannyId || storedUserId || "").trim();
-    const payload: any = await apiRequest("job/index", {
+    const query = effectiveNannyId
+      ? `?nanny_id=${encodeURIComponent(effectiveNannyId)}`
+      : "";
+    const payload: any = await apiRequest(`job/index${query}`, {
       method: "GET",
       headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(apiKey ? { "x-api-key": apiKey } : {}),
       },
     });

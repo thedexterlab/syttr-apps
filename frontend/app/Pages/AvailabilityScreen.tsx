@@ -307,10 +307,7 @@ const AvailabilityScreen: React.FC<Props> = ({ onBack, onSuccess, onDone }) => {
     normalized.setHours(0, 0, 0, 0);
     setPendingDate(normalized);
     setNewDate(normalized);
-    if (Platform.OS !== "ios") {
-      setShowDatePicker(false);
-      setShowTimePicker(true);
-    }
+    setShowDatePicker(false);
   };
 
   const handleTimeChange = (event: DateTimePickerEvent, date?: Date) => {
@@ -339,9 +336,17 @@ const AvailabilityScreen: React.FC<Props> = ({ onBack, onSuccess, onDone }) => {
       setCalendarTimeTarget(null);
     }
     setPendingDate(null);
-    if (Platform.OS !== "ios") {
-      setShowTimePicker(false);
+    setShowTimePicker(false);
+  };
+
+  const getTimePickerValue = () => {
+    if (calendarTimeTarget === "end") {
+      return newEndTime || newStartTime || pendingDate || newDate || new Date();
     }
+    if (calendarTimeTarget === "start") {
+      return newStartTime || pendingDate || newDate || new Date();
+    }
+    return pendingDate || newDate || newStartTime || newEndTime || new Date();
   };
 
   const removeCalendarSlot = (dateKey: string, slotToRemove: CalendarSlotRange | CalendarSlotRange[]) => {
@@ -793,7 +798,7 @@ const AvailabilityScreen: React.FC<Props> = ({ onBack, onSuccess, onDone }) => {
               </View>
 
               {/* TIME SLOTS */}
-              {selectedDays.map((day) => (
+              {DAYS.filter((day) => selectedDays.includes(day)).map((day) => (
                 <View key={day} style={styles.dayCard}>
                   <View style={styles.dayHeader}>
                     <Text style={styles.dayTitle}>{day}</Text>
@@ -1014,9 +1019,9 @@ const AvailabilityScreen: React.FC<Props> = ({ onBack, onSuccess, onDone }) => {
                     )}
                     {showTimePicker && (
                       <DateTimePicker
-                        value={newEndTime || newStartTime || pendingDate || new Date()}
+                        value={getTimePickerValue()}
                         mode="time"
-                        display="default"
+                        display={Platform.OS === "ios" ? "spinner" : "default"}
                         onChange={handleTimeChange}
                       />
                     )}

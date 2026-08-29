@@ -11,7 +11,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { apiRequest, getRuntimeApiKey, sanitizeToken } from "../Api";
+import { apiRequest, getRuntimeApiKey, isVerificationRequiredApiError, sanitizeToken } from "../Api";
 import { rf, rs } from "../utils/responsive";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import NannyBottomNav from "../components/NannyBottomNav";
@@ -187,6 +187,7 @@ type Props = {
   onNotifications?: () => void;
   onSettings?: () => void;
   onOpenJob?: (job: any) => void;
+  onRequireVerification?: () => void;
 };
 
 const NannyFavoriteJobsScreen: React.FC<Props> = ({
@@ -199,6 +200,7 @@ const NannyFavoriteJobsScreen: React.FC<Props> = ({
   onNotifications,
   onSettings,
   onOpenJob,
+  onRequireVerification,
 }) => {
   const insets = useSafeAreaInsets();
 
@@ -258,6 +260,11 @@ const NannyFavoriteJobsScreen: React.FC<Props> = ({
       });
       setJobs(Array.from(merged.values()));
     } catch (e) {
+      if (isVerificationRequiredApiError(e)) {
+        setJobs([]);
+        onRequireVerification?.();
+        return;
+      }
       try {
         const localRaw = await AsyncStorage.getItem("favorite_jobs");
         const localParsed = localRaw ? JSON.parse(localRaw) : [];
@@ -283,13 +290,20 @@ const NannyFavoriteJobsScreen: React.FC<Props> = ({
         undefined;
       const targetFavoriteId = jobs.find((j) => String(j.id) === String(jobId))?.favorite_id;
       if ((token || apiKey) && targetFavoriteId) {
-        await apiRequest(`favorite-jobs/${encodeURIComponent(String(targetFavoriteId))}`, {
-          method: "DELETE",
-          headers: {
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            ...(apiKey ? { "x-api-key": apiKey } : {}),
-          },
-        }).catch(() => null);
+        try {
+          await apiRequest(`favorite-jobs/${encodeURIComponent(String(targetFavoriteId))}`, {
+            method: "DELETE",
+            headers: {
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              ...(apiKey ? { "x-api-key": apiKey } : {}),
+            },
+          });
+        } catch (error) {
+          if (isVerificationRequiredApiError(error)) {
+            onRequireVerification?.();
+            return;
+          }
+        }
       }
 
       const normalizedId = String(jobId);
@@ -308,7 +322,11 @@ const NannyFavoriteJobsScreen: React.FC<Props> = ({
       if (jobs.length > 1) {
         Alert.alert("Removed", "Job removed from favorites.");
       }
-    } catch {
+    } catch (error) {
+      if (isVerificationRequiredApiError(error)) {
+        onRequireVerification?.();
+        return;
+      }
       Alert.alert("Error", "Unable to remove from favorites.");
     }
   };

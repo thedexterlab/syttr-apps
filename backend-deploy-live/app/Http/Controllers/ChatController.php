@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Events\ChatMessageSent;
-use App\Events\UserNotificationCreated;
 use App\Models\ChatConversation;
 use App\Models\ChatMessage;
 use App\Models\ParentProfile;
@@ -17,173 +16,178 @@ class ChatController extends Controller
 {
     public function conversations(Request $request): JsonResponse
     {
-        // Purge invalid self-conversation rows created by older buggy clients.
-        ChatConversation::query()->whereColumn('user_id', 'nanny_id')->delete();
+        try {
+            $userId = $this->resolveUserIdFromInput($request, 'user_id');
+            $nannyId = $this->resolveUserIdFromInput($request, 'nanny_id');
+            $authUserId = $this->resolveUserId($request, null);
 
-        $userId = $this->resolveUserIdFromInput($request, 'user_id');
-        $nannyId = $this->resolveUserIdFromInput($request, 'nanny_id');
-        $authUserId = $this->resolveUserId($request, null);
+            if (! $userId && ! $nannyId && $authUserId) {
+                $userId = $authUserId;
+            }
 
-        if (! $userId && ! $nannyId && $authUserId) {
-            // Role values can vary across environments; use authenticated id directly.
-            $userId = $authUserId;
-        }
+            if (! $userId && ! $nannyId) {
+                return response()->json(['success' => true, 'data' => []]);
+            }
 
-        if (! $userId && ! $nannyId) {
-            return response()->json(['success' => true, 'data' => []]);
-        }
+            $query = ChatConversation::query()
+                ->whereColumn('user_id', '!=', 'nanny_id');
 
-        $query = ChatConversation::query();
-        $query
-            // Invalid rows (same participant on both sides) should never be shown.
-            ->whereColumn('user_id', '!=', 'nanny_id');
-        if ($userId && $nannyId) {
-            $query->where('user_id', $userId)->where('nanny_id', $nannyId);
-        } elseif ($nannyId && ! $userId) {
-            $query->where('nanny_id', $nannyId);
-        } elseif ($userId && ! $nannyId) {
-            $query->where(function ($inner) use ($userId, $authUserId) {
-                $inner->where('user_id', $userId);
-                // If request only has auth-derived user_id, also include rows where this user is nanny.
-                if ($authUserId && (string) $userId === (string) $authUserId) {
-                    $inner->orWhere('nanny_id', $userId);
-                }
-            });
-        }
-
-        $conversationRows = $query
-            ->orderByDesc('updated_at')
-            ->orderByDesc('id')
-            ->get();
-        $conversationBuckets = $conversationRows
-            ->groupBy(static fn (ChatConversation $conversation) => strtoupper(trim((string) $conversation->user_id)).'::'.strtoupper(trim((string) $conversation->nanny_id)));
-        $conversations = $conversationBuckets
-            ->map(static function ($bucket) {
-                return $bucket
-                    ->sortByDesc('updated_at')
-                    ->sortByDesc('id')
-                    ->first();
-            })
-            ->values();
-        $conversationIdsByKey = $conversationBuckets
-            ->map(static fn ($bucket) => $bucket->pluck('id')->map(static fn ($id) => (int) $id)->values()->all())
-            ->all();
-        $parentPublicIds = $conversations->pluck('user_id')->filter()->unique()->values();
-        $nannyPublicIds = $conversations->pluck('nanny_id')->filter()->unique()->values();
-
-        $parentUsers = $parentPublicIds->count() > 0
-            ? User::query()
-                ->whereIn('user_id', $parentPublicIds->all())
-                ->get(['id', 'user_id', 'name', 'email'])
-                ->keyBy('user_id')
-            : collect();
-        $nannyUsers = $nannyPublicIds->count() > 0
-            ? User::query()
-                ->whereIn('user_id', $nannyPublicIds->all())
-                ->get(['id', 'user_id', 'name', 'email'])
-                ->keyBy('user_id')
-            : collect();
-        $nannyUsersByInternalId = $nannyUsers->keyBy('id');
-        $parentProfiles = $parentPublicIds->count() > 0
-            ? ParentProfile::query()
-                ->whereIn('user_id', $parentPublicIds->all())
-                ->get(['user_id', 'phone', 'city', 'address', 'user_image'])
-                ->keyBy('user_id')
-            : collect();
-        $nannyProfiles = $nannyUsersByInternalId->count() > 0
-            ? SyttrProfile::query()
-                ->whereIn('user_id', $nannyUsersByInternalId->keys()->all())
-                ->get(['user_id', 'phone', 'city', 'address', 'user_image'])
-                ->mapWithKeys(function (SyttrProfile $profile) use ($nannyUsersByInternalId) {
-                    $nannyUser = $nannyUsersByInternalId->get($profile->user_id);
-                    $publicUserId = trim((string) ($nannyUser?->user_id ?? ''));
-                    if ($publicUserId === '') {
-                        return [];
+            if ($userId && $nannyId) {
+                $query->where('user_id', $userId)->where('nanny_id', $nannyId);
+            } elseif ($nannyId && ! $userId) {
+                $query->where('nanny_id', $nannyId);
+            } elseif ($userId && ! $nannyId) {
+                $query->where(function ($inner) use ($userId, $authUserId) {
+                    $inner->where('user_id', $userId);
+                    if ($authUserId && (string) $userId === (string) $authUserId) {
+                        $inner->orWhere('nanny_id', $userId);
                     }
+                });
+            }
 
-                    return [$publicUserId => $profile];
+            $conversationRows = $query
+                ->orderByDesc('updated_at')
+                ->orderByDesc('id')
+                ->get();
+            $conversationBuckets = $conversationRows
+                ->groupBy(static fn (ChatConversation $conversation) => strtoupper(trim((string) $conversation->user_id)).'::'.strtoupper(trim((string) $conversation->nanny_id)));
+            $conversations = $conversationBuckets
+                ->map(static function ($bucket) {
+                    return $bucket
+                        ->sortByDesc('updated_at')
+                        ->sortByDesc('id')
+                        ->first();
                 })
-            : collect();
+                ->values();
+            $conversationIdsByKey = $conversationBuckets
+                ->map(static fn ($bucket) => $bucket->pluck('id')->map(static fn ($id) => (int) $id)->values()->all())
+                ->all();
+            $parentPublicIds = $conversations->pluck('user_id')->filter()->unique()->values();
+            $nannyPublicIds = $conversations->pluck('nanny_id')->filter()->unique()->values();
 
-        $viewerId = $authUserId ?: ($nannyId ?: $userId);
+            $parentUsers = $parentPublicIds->count() > 0
+                ? User::query()
+                    ->whereIn('user_id', $parentPublicIds->all())
+                    ->get(['id', 'user_id', 'name', 'email'])
+                    ->keyBy('user_id')
+                : collect();
+            $nannyUsers = $nannyPublicIds->count() > 0
+                ? User::query()
+                    ->whereIn('user_id', $nannyPublicIds->all())
+                    ->get(['id', 'user_id', 'name', 'email'])
+                    ->keyBy('user_id')
+                : collect();
+            $nannyUsersByInternalId = $nannyUsers->keyBy('id');
+            $parentProfiles = $parentPublicIds->count() > 0
+                ? ParentProfile::query()
+                    ->whereIn('user_id', $parentPublicIds->all())
+                    ->get(['user_id', 'phone', 'city', 'address', 'user_image'])
+                    ->keyBy('user_id')
+                : collect();
+            $nannyProfiles = $nannyUsersByInternalId->count() > 0
+                ? SyttrProfile::query()
+                    ->whereIn('user_id', $nannyUsersByInternalId->keys()->all())
+                    ->get(['user_id', 'phone', 'city', 'address', 'user_image'])
+                    ->mapWithKeys(function (SyttrProfile $profile) use ($nannyUsersByInternalId) {
+                        $nannyUser = $nannyUsersByInternalId->get($profile->user_id);
+                        $publicUserId = trim((string) ($nannyUser?->user_id ?? ''));
+                        if ($publicUserId === '') {
+                            return [];
+                        }
 
-        $items = $conversations->map(function (ChatConversation $conversation) use (
-            $viewerId,
-            $parentUsers,
-            $parentProfiles,
-            $nannyUsers,
-            $nannyProfiles,
-            $conversationIdsByKey
-        ) {
-            $isNannyViewer = $viewerId && (string) $viewerId === (string) $conversation->nanny_id;
-            $bucketKey = strtoupper(trim((string) $conversation->user_id)).'::'.strtoupper(trim((string) $conversation->nanny_id));
-            $conversationIds = $conversationIdsByKey[$bucketKey] ?? [(int) $conversation->id];
+                        return [$publicUserId => $profile];
+                    })
+                : collect();
 
-            $last = ChatMessage::query()
-                ->whereIn('conversation_id', $conversationIds)
-                ->latest('id')
-                ->first();
+            $viewerId = $authUserId ?: ($nannyId ?: $userId);
 
-            $unread = ChatMessage::query()
-                ->whereIn('conversation_id', $conversationIds)
-                ->where('sender', $isNannyViewer ? 'user' : 'nanny')
-                ->where('is_read', false)
-                ->count();
+            $items = $conversations->map(function (ChatConversation $conversation) use (
+                $viewerId,
+                $parentUsers,
+                $parentProfiles,
+                $nannyUsers,
+                $nannyProfiles,
+                $conversationIdsByKey
+            ) {
+                $isNannyViewer = $viewerId && (string) $viewerId === (string) $conversation->nanny_id;
+                $bucketKey = strtoupper(trim((string) $conversation->user_id)).'::'.strtoupper(trim((string) $conversation->nanny_id));
+                $conversationIds = $conversationIdsByKey[$bucketKey] ?? [(int) $conversation->id];
 
-            $parentUser = $parentUsers->get($conversation->user_id);
-            $parentProfile = $parentProfiles->get($conversation->user_id);
-            $nannyUser = $nannyUsers->get($conversation->nanny_id);
-            $nannyProfile = $nannyProfiles->get($conversation->nanny_id);
+                $last = ChatMessage::query()
+                    ->whereIn('conversation_id', $conversationIds)
+                    ->latest('id')
+                    ->first();
 
-            $contactName = $isNannyViewer
-                ? ($parentUser?->name ?: 'Parent')
-                : ($nannyUser?->name ?: 'Syttr');
-            $contactImagePath = $isNannyViewer
-                ? ($parentProfile?->user_image_url ?: $parentProfile?->user_image)
-                : ($nannyProfile?->user_image_url ?: $nannyProfile?->user_image);
-            $contactAvatar = $contactImagePath
-                ? (preg_match('/^https?:\/\//i', (string) $contactImagePath)
-                    ? (string) $contactImagePath
-                    : asset('storage/'.ltrim((string) $contactImagePath, '/')))
-                : null;
+                $unread = ChatMessage::query()
+                    ->whereIn('conversation_id', $conversationIds)
+                    ->where('sender', $isNannyViewer ? 'user' : 'nanny')
+                    ->where('is_read', false)
+                    ->count();
 
-            return [
-                'id' => $conversation->id,
-                'conversation_id' => $conversation->id,
-                'user_id' => $conversation->user_id,
-                'nanny_id' => $conversation->nanny_id,
-                'name' => $contactName,
-                'avatar' => $contactAvatar,
-                'user_image' => $isNannyViewer ? $contactAvatar : null,
-                'lastMessage' => $last?->message ?: '',
-                'message' => $last?->message ?: '',
-                'time' => optional($last?->created_at)->toISOString(),
-                'updated_at' => optional($last?->updated_at)->toISOString(),
-                'unread' => $unread,
-                'unread_count' => $unread,
-                'user' => [
-                    'id' => $conversation->user_id,
-                    'name' => $parentUser?->name,
-                    'email' => $parentUser?->email,
-                    'profile_image' => $parentProfile?->user_image_url ?: $parentProfile?->user_image,
-                    'user_image_url' => $parentProfile?->user_image_url,
-                ],
-                'nanny' => [
-                    'id' => $conversation->nanny_id,
-                    'name' => $nannyUser?->name,
-                    'email' => $nannyUser?->email,
-                    'profile_image' => $nannyProfile?->user_image_url ?: $nannyProfile?->user_image,
-                    'user_image_url' => $nannyProfile?->user_image_url,
-                ],
-            ];
-        })->sortByDesc(static function (array $item) {
-            return strtotime((string) ($item['time'] ?? $item['updated_at'] ?? ''));
-        })->values();
+                $parentUser = $parentUsers->get($conversation->user_id);
+                $parentProfile = $parentProfiles->get($conversation->user_id);
+                $nannyUser = $nannyUsers->get($conversation->nanny_id);
+                $nannyProfile = $nannyProfiles->get($conversation->nanny_id);
 
-        return response()->json([
-            'success' => true,
-            'data' => $items->values(),
-        ]);
+                $contactName = $isNannyViewer
+                    ? ($parentUser?->name ?: 'Parent')
+                    : ($nannyUser?->name ?: 'Syttr');
+                $contactAvatar = $this->normalizeProfileImageUrl(
+                    $isNannyViewer
+                        ? ($parentProfile?->user_image ?? null)
+                        : ($nannyProfile?->user_image ?? null)
+                );
+
+                return [
+                    'id' => $conversation->id,
+                    'conversation_id' => $conversation->id,
+                    'user_id' => $conversation->user_id,
+                    'nanny_id' => $conversation->nanny_id,
+                    'name' => $contactName,
+                    'avatar' => $contactAvatar,
+                    'user_image' => $isNannyViewer ? $contactAvatar : null,
+                    'lastMessage' => $last?->message ?: '',
+                    'message' => $last?->message ?: '',
+                    'time' => optional($last?->created_at)->toISOString(),
+                    'updated_at' => optional($last?->updated_at)->toISOString(),
+                    'unread' => $unread,
+                    'unread_count' => $unread,
+                    'user' => [
+                        'id' => $conversation->user_id,
+                        'name' => $parentUser?->name,
+                        'email' => $parentUser?->email,
+                        'profile_image' => $this->normalizeProfileImageUrl($parentProfile?->user_image ?? null),
+                        'user_image_url' => $this->normalizeProfileImageUrl($parentProfile?->user_image ?? null),
+                    ],
+                    'nanny' => [
+                        'id' => $conversation->nanny_id,
+                        'name' => $nannyUser?->name,
+                        'email' => $nannyUser?->email,
+                        'profile_image' => $this->normalizeProfileImageUrl($nannyProfile?->user_image ?? null),
+                        'user_image_url' => $this->normalizeProfileImageUrl($nannyProfile?->user_image ?? null),
+                    ],
+                ];
+            })->sortByDesc(static function (array $item) {
+                return strtotime((string) ($item['time'] ?? $item['updated_at'] ?? ''));
+            })->values();
+
+            return response()->json([
+                'success' => true,
+                'data' => $items->values(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('chat.conversations.failed', [
+                'user_id' => $request->input('user_id'),
+                'nanny_id' => $request->input('nanny_id'),
+                'auth_present' => (bool) $request->bearerToken(),
+                'message' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'data' => [],
+            ]);
+        }
     }
 
     public function index(Request $request): JsonResponse
@@ -424,5 +428,26 @@ class ChatController extends Controller
             'created_at' => optional($message->created_at)->toISOString(),
             'updated_at' => optional($message->updated_at)->toISOString(),
         ];
+    }
+
+    private function normalizeProfileImageUrl(mixed $value): ?string
+    {
+        $path = trim((string) ($value ?? ''));
+        if ($path === '') {
+            return null;
+        }
+        if (preg_match('/^https?:\/\//i', $path)) {
+            return $path;
+        }
+
+        $clean = ltrim($path, '/');
+        if (str_starts_with($clean, 'storage/')) {
+            return url($clean);
+        }
+        if (str_starts_with($clean, 'public/')) {
+            return url('storage/'.ltrim(substr($clean, 7), '/'));
+        }
+
+        return url('storage/'.$clean);
     }
 }

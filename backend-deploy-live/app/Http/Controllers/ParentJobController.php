@@ -167,6 +167,7 @@ class ParentJobController extends Controller
                     'end_date' => optional($job->end_date)->format('Y-m-d'),
                     'start_time' => (string) ($job->start_time ?? ''),
                     'end_time' => (string) ($job->end_time ?? ''),
+                    'timezone' => $job->localTimezone(),
                     'location' => $job->location,
                     'latitude' => $job->latitude !== null ? (float) $job->latitude : null,
                     'longitude' => $job->longitude !== null ? (float) $job->longitude : null,
@@ -183,7 +184,7 @@ class ParentJobController extends Controller
                     'experience' => $nannyProfile?->experience_years,
                     'hourly_rate' => $nannyProfile?->hourly_rate,
                     'bio' => $nannyProfile?->bio,
-                    'profile_image' => $nannyProfile?->user_image,
+                    'profile_image' => $nannyProfile?->user_image_url,
                     'user_image_url' => $nannyProfile?->user_image_url,
                 ],
                 'application' => [
@@ -300,15 +301,6 @@ class ParentJobController extends Controller
         if ($blocked = $this->ensureParentCanPostJob($publicUserId)) {
             return $blocked;
         }
-        if ($blocked = $this->ensureParentHasNoJobDateConflict(
-            $publicUserId,
-            (string) $data['start_date'],
-            $data['end_date'] ?? null,
-            'job_post'
-        )) {
-            return $blocked;
-        }
-
         $kidIds = collect($data['kid_ids'])
             ->map(static fn ($id) => (int) $id)
             ->filter(static fn ($id) => $id > 0)
@@ -353,18 +345,6 @@ class ParentJobController extends Controller
             ], 422);
         }
 
-        $hours = round((float) $data['hours'], 2);
-        $hourlyRate = array_key_exists('hourly_rate', $data) && $data['hourly_rate'] !== null
-            ? round((float) $data['hourly_rate'], 2)
-            : null;
-        $price = array_key_exists('price', $data) && $data['price'] !== null
-            ? round((float) $data['price'], 2)
-            : null;
-
-        if ($price === null && $hourlyRate !== null) {
-            $price = round($hours * $hourlyRate, 2);
-        }
-
         $verifiedLocation = $this->resolveVerifiedLocation(
             (string) $data['location'],
             $data['latitude'] ?? null,
@@ -376,8 +356,49 @@ class ParentJobController extends Controller
                 'message' => $verifiedLocation['message'],
             ], 422);
         }
+        $jobTimezone = $this->resolveJobTimezone(
+            $verifiedLocation['latitude'] ?? null,
+            $verifiedLocation['longitude'] ?? null
+        );
 
-        $job = ParentJob::query()->create([
+        $hours = round((float) $data['hours'], 2);
+        $schedule = $this->resolveJobScheduleForStorage(
+            (string) $data['start_date'],
+            $data['end_date'] ?? null,
+            $startTime,
+            $endTime,
+            $hours,
+            $jobTimezone
+        );
+        if (! ($schedule['ok'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'message' => (string) ($schedule['message'] ?? 'Invalid job schedule.'),
+            ], 422);
+        }
+        $endDate = (string) $schedule['end_date'];
+
+        if ($blocked = $this->ensureParentHasNoJobDateConflict(
+            $publicUserId,
+            (string) $data['start_date'],
+            $endDate,
+            'job_post'
+        )) {
+            return $blocked;
+        }
+
+        $hourlyRate = array_key_exists('hourly_rate', $data) && $data['hourly_rate'] !== null
+            ? round((float) $data['hourly_rate'], 2)
+            : null;
+        $price = array_key_exists('price', $data) && $data['price'] !== null
+            ? round((float) $data['price'], 2)
+            : null;
+
+        if ($price === null && $hourlyRate !== null) {
+            $price = round($hours * $hourlyRate, 2);
+        }
+
+        $jobPayload = [
             'user_id' => $publicUserId,
             'kid_ids' => $kidIds,
             'kid_names' => $kids
@@ -390,12 +411,17 @@ class ParentJobController extends Controller
             'start_time' => $startTime,
             'end_time' => $endTime,
             'start_date' => $data['start_date'],
-            'end_date' => $data['end_date'] ?? $data['start_date'],
+            'end_date' => $endDate,
             'location' => $verifiedLocation['location'],
             'latitude' => $verifiedLocation['latitude'],
             'longitude' => $verifiedLocation['longitude'],
             'status' => strtolower(trim((string) ($data['status'] ?? 'pending'))) ?: 'pending',
-        ]);
+        ];
+        if ($this->supportsParentJobTimezoneColumn()) {
+            $jobPayload['timezone'] = $jobTimezone;
+        }
+
+        $job = ParentJob::query()->create($jobPayload);
 
         Log::info('parent_job.store.success', [
             'job_id' => $job->id,
@@ -494,17 +520,6 @@ class ParentJobController extends Controller
             ], 422);
         }
 
-        $hours = round((float) $data['hours'], 2);
-        $hourlyRate = array_key_exists('hourly_rate', $data) && $data['hourly_rate'] !== null
-            ? round((float) $data['hourly_rate'], 2)
-            : null;
-        $price = array_key_exists('price', $data) && $data['price'] !== null
-            ? round((float) $data['price'], 2)
-            : null;
-        if ($price === null && $hourlyRate !== null) {
-            $price = round($hours * $hourlyRate, 2);
-        }
-
         $verifiedLocation = $this->resolveVerifiedLocation(
             (string) $data['location'],
             $data['latitude'] ?? null,
@@ -516,15 +531,46 @@ class ParentJobController extends Controller
                 'message' => $verifiedLocation['message'],
             ], 422);
         }
+        $jobTimezone = $this->resolveJobTimezone(
+            $verifiedLocation['latitude'] ?? null,
+            $verifiedLocation['longitude'] ?? null
+        );
+
+        $hours = round((float) $data['hours'], 2);
+        $schedule = $this->resolveJobScheduleForStorage(
+            (string) $data['start_date'],
+            $data['end_date'] ?? null,
+            $startTime,
+            $endTime,
+            $hours,
+            $jobTimezone
+        );
+        if (! ($schedule['ok'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'message' => (string) ($schedule['message'] ?? 'Invalid job schedule.'),
+            ], 422);
+        }
+        $endDate = (string) $schedule['end_date'];
+
+        $hourlyRate = array_key_exists('hourly_rate', $data) && $data['hourly_rate'] !== null
+            ? round((float) $data['hourly_rate'], 2)
+            : null;
+        $price = array_key_exists('price', $data) && $data['price'] !== null
+            ? round((float) $data['price'], 2)
+            : null;
+        if ($price === null && $hourlyRate !== null) {
+            $price = round($hours * $hourlyRate, 2);
+        }
 
         $job = $this->findExistingActiveJobForDateRange(
             $parentUserId,
             (string) $data['start_date'],
-            $data['end_date'] ?? null
+            $endDate
         );
 
         if (! $job) {
-            $job = ParentJob::query()->create([
+            $jobPayload = [
                 'user_id' => $parentUserId,
                 'kid_ids' => $kidIds,
                 'kid_names' => $kids
@@ -537,19 +583,24 @@ class ParentJobController extends Controller
                 'start_time' => $startTime,
                 'end_time' => $endTime,
                 'start_date' => $data['start_date'],
-                'end_date' => $data['end_date'] ?? $data['start_date'],
+                'end_date' => $endDate,
                 'location' => $verifiedLocation['location'],
                 'latitude' => $verifiedLocation['latitude'],
                 'longitude' => $verifiedLocation['longitude'],
                 'status' => 'pending',
-            ]);
+            ];
+            if ($this->supportsParentJobTimezoneColumn()) {
+                $jobPayload['timezone'] = $jobTimezone;
+            }
+
+            $job = ParentJob::query()->create($jobPayload);
         }
 
         $existingHireRequest = $this->findExistingHireRequestForDateRange(
             $parentUserId,
             $nannyUserId,
             (string) $data['start_date'],
-            $data['end_date'] ?? null
+            $endDate
         );
         if ($existingHireRequest) {
             return response()->json([
@@ -604,6 +655,7 @@ class ParentJobController extends Controller
                     'end_date' => optional($job->end_date)->format('Y-m-d'),
                     'start_time' => (string) $job->start_time,
                     'end_time' => (string) ($job->end_time ?? ''),
+                    'timezone' => $job->localTimezone(),
                     'hours' => $job->hours !== null ? (float) $job->hours : null,
                     'hourly_rate' => $job->hourly_rate !== null ? (float) $job->hourly_rate : null,
                     'price' => $job->price !== null ? (float) $job->price : null,
@@ -632,7 +684,7 @@ class ParentJobController extends Controller
                     'city' => $parentProfile?->city,
                     'country' => $parentProfile?->country,
                     'address' => $parentProfile?->address,
-                    'profile_image' => $parentProfile?->user_image_url ?: $parentProfile?->user_image,
+                    'profile_image' => $parentProfile?->user_image_url,
                     'user_image' => $parentProfile?->user_image,
                     'user_image_url' => $parentProfile?->user_image_url,
                     'average_rating' => $parentStats['average_rating'],
@@ -1070,20 +1122,31 @@ class ParentJobController extends Controller
 
         if ($this->isCanceledStatus($normalizedStatus)) {
             $cancellationPolicy = $this->resolveCancellationCutoffPolicy($job);
-            if ($cancellationPolicy['is_blocked']) {
+            $lateCancellationFee = $this->calculateLateCancellationFee($job, $cancellationPolicy);
+            $confirmLateFee = filter_var($data['confirm_late_fee'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
+            if (($cancellationPolicy['fee_applies'] ?? false) && ! $confirmLateFee) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'You can only cancel a job more than 24 hours before its scheduled start time.',
+                    'message' => 'Canceling within 24 hours will apply a late cancellation fee.',
+                    'requires_confirmation' => true,
                     'policy' => [
                         'start_at' => $cancellationPolicy['start_at']?->toISOString(),
                         'cutoff_at' => $cancellationPolicy['cutoff_at']?->toISOString(),
                     ],
-                ], 422);
+                    'late_cancellation_fee' => $lateCancellationFee,
+                    'late_cancellation_fee_applied' => false,
+                ], 409);
             }
 
             if ($supportsLateCancellationFeeColumns) {
-                $job->late_cancellation_fee = null;
-                $job->late_cancellation_fee_charged_at = null;
+                if (($cancellationPolicy['fee_applies'] ?? false)) {
+                    $job->late_cancellation_fee = $lateCancellationFee;
+                    $job->late_cancellation_fee_charged_at = now();
+                } else {
+                    $job->late_cancellation_fee = null;
+                    $job->late_cancellation_fee_charged_at = null;
+                }
             }
         }
 
@@ -1256,8 +1319,11 @@ class ParentJobController extends Controller
             'data' => [
                 'job' => $this->formatJob($job->fresh()),
                 'status' => $normalizedStatus,
-                'late_cancellation_fee_applied' => false,
-                'late_cancellation_fee' => 0,
+                'late_cancellation_fee_applied' => $this->isCanceledStatus($normalizedStatus)
+                    && (float) ($job->late_cancellation_fee ?? 0) > 0,
+                'late_cancellation_fee' => $job->late_cancellation_fee !== null
+                    ? round((float) $job->late_cancellation_fee, 2)
+                    : 0,
                 'payment' => $completionPayment,
             ],
         ]);
@@ -2368,6 +2434,17 @@ class ParentJobController extends Controller
         return (bool) $supportsColumns;
     }
 
+    private function supportsParentJobTimezoneColumn(): bool
+    {
+        static $supportsColumn = null;
+
+        if ($supportsColumn === null) {
+            $supportsColumn = Schema::hasColumn('parent_jobs', 'timezone');
+        }
+
+        return (bool) $supportsColumn;
+    }
+
     private function isCompletedStatus(?string $status): bool
     {
         $normalized = strtolower(trim((string) ($status ?? '')));
@@ -2376,7 +2453,7 @@ class ParentJobController extends Controller
 
     private function isJobWithinScheduledWindow(ParentJob $job): bool
     {
-        $timezone = config('app.timezone');
+        $timezone = $this->jobTimezone($job);
         $startAt = $this->buildJobStartAt($job, $timezone);
         if (! $startAt) {
             return false;
@@ -2394,11 +2471,12 @@ class ParentJobController extends Controller
 
     private function resolveCancellationCutoffPolicy(ParentJob $job): array
     {
-        $timezone = config('app.timezone');
+        $timezone = $this->jobTimezone($job);
         $startAt = $this->buildJobStartAt($job, $timezone);
         if (! $startAt) {
             return [
                 'is_blocked' => false,
+                'fee_applies' => false,
                 'start_at' => null,
                 'cutoff_at' => null,
             ];
@@ -2409,9 +2487,24 @@ class ParentJobController extends Controller
 
         return [
             'is_blocked' => $now->greaterThanOrEqualTo($cutoffAt),
+            'fee_applies' => $now->greaterThanOrEqualTo($cutoffAt),
             'start_at' => $startAt,
             'cutoff_at' => $cutoffAt,
         ];
+    }
+
+    private function calculateLateCancellationFee(ParentJob $job, array $cancellationPolicy): float
+    {
+        if (! ($cancellationPolicy['fee_applies'] ?? false)) {
+            return 0.0;
+        }
+
+        $baseAmount = $this->resolveCompletionAmount($job);
+        if ($baseAmount <= 0) {
+            return 0.0;
+        }
+
+        return round($baseAmount * 0.05, 2);
     }
 
     private function buildJobStartAt(ParentJob $job, string $timezone): ?Carbon
@@ -3546,6 +3639,151 @@ class ParentJobController extends Controller
         return null;
     }
 
+    private function resolveJobScheduleForStorage(
+        string $startDate,
+        ?string $endDate,
+        string $startTime,
+        ?string $endTime,
+        float $hours,
+        ?string $timezone = null
+    ): array {
+        $timezone = $this->normalizeTimezone($timezone) ?: config('app.timezone');
+
+        try {
+            $startAt = Carbon::createFromFormat('Y-m-d H:i:s', $startDate.' '.$startTime, $timezone);
+        } catch (\Throwable) {
+            return [
+                'ok' => false,
+                'message' => 'Invalid job start date or time.',
+            ];
+        }
+
+        if (! $startAt) {
+            return [
+                'ok' => false,
+                'message' => 'Invalid job start date or time.',
+            ];
+        }
+
+        $resolvedEndDate = trim((string) ($endDate ?? '')) !== '' ? (string) $endDate : $startDate;
+        if ($endTime) {
+            try {
+                $endAt = Carbon::createFromFormat('Y-m-d H:i:s', $resolvedEndDate.' '.$endTime, $timezone);
+            } catch (\Throwable) {
+                return [
+                    'ok' => false,
+                    'message' => 'Invalid job end date or time.',
+                ];
+            }
+
+            if ($endAt && $endAt->lte($startAt) && $resolvedEndDate === $startDate) {
+                $endAt = $endAt->copy()->addDay();
+            }
+        } else {
+            $endAt = $startAt->copy()->addMinutes((int) round($hours * 60));
+        }
+
+        if (! $endAt || $endAt->lte($startAt)) {
+            return [
+                'ok' => false,
+                'message' => 'Job end time must be after the start time.',
+            ];
+        }
+
+        if ($endAt->lte(Carbon::now($timezone))) {
+            return [
+                'ok' => false,
+                'message' => 'Job end time must be in the future.',
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'end_date' => $endAt->toDateString(),
+        ];
+    }
+
+    private function jobTimezone(ParentJob $job): string
+    {
+        return $job->localTimezone();
+    }
+
+    private function resolveJobTimezone(mixed $latitude, mixed $longitude): string
+    {
+        $fallback = config('app.business_timezone', 'America/Chicago');
+        $lat = is_numeric($latitude) ? (float) $latitude : null;
+        $lng = is_numeric($longitude) ? (float) $longitude : null;
+        if ($lat === null || $lng === null || $lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+            return $fallback;
+        }
+
+        $apiKey = trim((string) config('services.google_maps.key'));
+        if ($apiKey !== '') {
+            try {
+                $response = Http::timeout(8)
+                    ->acceptJson()
+                    ->get('https://maps.googleapis.com/maps/api/timezone/json', [
+                        'location' => $lat.','.$lng,
+                        'timestamp' => Carbon::now('UTC')->timestamp,
+                        'key' => $apiKey,
+                    ]);
+
+                if ($response->ok()) {
+                    $payload = $response->json() ?: [];
+                    $status = strtoupper(trim((string) ($payload['status'] ?? '')));
+                    $timeZoneId = $this->normalizeTimezone((string) ($payload['timeZoneId'] ?? ''));
+                    if ($status === 'OK' && $timeZoneId) {
+                        return $timeZoneId;
+                    }
+                } else {
+                    Log::warning('job.timezone.http_failed', ['status' => $response->status()]);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('job.timezone.exception', ['error' => $e->getMessage()]);
+            }
+        }
+
+        return $this->inferUsTimezoneFromCoordinates($lat, $lng) ?: $fallback;
+    }
+
+    private function normalizeTimezone(?string $timezone): ?string
+    {
+        $timezone = trim((string) ($timezone ?? ''));
+        if ($timezone === '') {
+            return null;
+        }
+
+        return in_array($timezone, timezone_identifiers_list(), true) ? $timezone : null;
+    }
+
+    private function inferUsTimezoneFromCoordinates(float $latitude, float $longitude): ?string
+    {
+        if ($latitude < 18 || $latitude > 72 || $longitude < -170 || $longitude > -60) {
+            return null;
+        }
+
+        if ($latitude < 25 && $longitude >= -161 && $longitude <= -154) {
+            return 'Pacific/Honolulu';
+        }
+        if ($longitude <= -130) {
+            return 'America/Adak';
+        }
+        if ($longitude <= -125) {
+            return 'America/Anchorage';
+        }
+        if ($longitude <= -115) {
+            return 'America/Los_Angeles';
+        }
+        if ($longitude <= -100) {
+            return 'America/Denver';
+        }
+        if ($longitude <= -85) {
+            return 'America/Chicago';
+        }
+
+        return 'America/New_York';
+    }
+
     private function calculateExtraHoursFromEndTime(string $currentEndTime, string $requestedEndTime): ?float
     {
         try {
@@ -3933,7 +4171,7 @@ class ParentJobController extends Controller
                 'experience' => $nannyProfile?->experience_years,
                 'hourly_rate' => $nannyProfile?->hourly_rate !== null ? (float) $nannyProfile->hourly_rate : null,
                 'bio' => $nannyProfile?->bio,
-                'profile_image' => $nannyProfile?->user_image_url ?: $nannyProfile?->user_image,
+                'profile_image' => $nannyProfile?->user_image_url,
                 'user_image' => $nannyProfile?->user_image,
                 'user_image_url' => $nannyProfile?->user_image_url,
                 'reliability' => [
@@ -3996,6 +4234,7 @@ class ParentJobController extends Controller
             'end_date' => $job->end_date ? $job->end_date->format('Y-m-d') : null,
             'start_time' => (string) $job->start_time,
             'end_time' => (string) ($job->end_time ?? ''),
+            'timezone' => $job->localTimezone(),
             'location' => (string) ($job->location ?? ''),
             'latitude' => $job->latitude !== null ? (float) $job->latitude : null,
             'longitude' => $job->longitude !== null ? (float) $job->longitude : null,
@@ -4010,9 +4249,9 @@ class ParentJobController extends Controller
             'parent_name' => $name ?: null,
             'parent_firstname' => $firstName,
             'parent_lastname' => $lastName,
-            'parent_image' => $profile?->user_image,
+            'parent_image' => $profile?->user_image_url,
             'parent_image_url' => $profile?->user_image_url,
-            'parent_profile_image' => $profile?->user_image_url ?: $profile?->user_image,
+            'parent_profile_image' => $profile?->user_image_url,
             'parent_city' => $profile?->city,
             'parent_country' => $profile?->country,
             'parent_average_rating' => $parentStats['average_rating'],

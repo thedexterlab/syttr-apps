@@ -56,9 +56,115 @@ class ActiveJobCompletionRemindersTest extends TestCase
         $this->assertSame('P1001', $notifications[0]->recipient_user_id);
         $this->assertSame('job_complete_reminder_parent', $notifications[0]->type);
         $this->assertStringContainsString('30 minutes', $notifications[0]->message);
+        $this->assertStringContainsString('request extra hours before the scheduled end time', $notifications[0]->message);
         $this->assertSame('N2001', $notifications[1]->recipient_user_id);
         $this->assertSame('job_complete_reminder_nanny', $notifications[1]->type);
-        $this->assertStringContainsString('30 minutes', $notifications[1]->message);
+        $this->assertSame('Job still incomplete. Please remind the parent to complete the booking. Payment will be released once the job is completed.', $notifications[1]->message);
+    }
+
+    public function test_it_sends_parent_and_nanny_reminders_five_minutes_before_end_time(): void
+    {
+        $this->seedBookingFixture();
+        Carbon::setTestNow('2026-05-14 14:25:00');
+
+        $this->artisan('jobs:send-active-completion-reminders')->assertSuccessful();
+
+        $notifications = DB::table('user_notifications')
+            ->orderBy('id')
+            ->get();
+
+        $this->assertCount(2, $notifications);
+        $this->assertSame('Your job is still active. Tap Complete Job to avoid delay fees', $notifications[0]->message);
+        $this->assertSame('Job still incomplete. Please remind the parent to complete the booking. Payment will be released once the job is completed.', $notifications[1]->message);
+    }
+
+    public function test_it_sends_parent_and_nanny_reminders_five_minutes_after_end_time_when_job_is_not_completed(): void
+    {
+        $this->seedBookingFixture();
+        Carbon::setTestNow('2026-05-14 14:35:00');
+
+        $this->artisan('jobs:send-active-completion-reminders')->assertSuccessful();
+
+        $notifications = DB::table('user_notifications')
+            ->orderBy('id')
+            ->get();
+
+        $this->assertCount(2, $notifications);
+        $this->assertSame('Your booking ended 5 minutes ago and no confirmation was received. Please click complete job in order for your syttr to get paid and to avoid any late fees.', $notifications[0]->message);
+        $this->assertSame('Job still incomplete. Please remind the parent to complete the booking. Payment will be released once the job is completed.', $notifications[1]->message);
+    }
+
+    public function test_it_repeats_the_overdue_reminder_cycle_every_thirty_minutes_until_completion(): void
+    {
+        $this->seedBookingFixture();
+        Carbon::setTestNow('2026-05-14 15:30:00');
+
+        $this->artisan('jobs:send-active-completion-reminders')->assertSuccessful();
+
+        $notifications = DB::table('user_notifications')
+            ->orderBy('id')
+            ->get();
+
+        $this->assertCount(2, $notifications);
+        $this->assertSame('Your booking ended 1 hour ago and no confirmation was received. Please click complete job in order for your syttr to get paid and to avoid any late fees.', $notifications[0]->message);
+        $this->assertSame('Job still incomplete. Please remind the parent to complete the booking. Payment will be released once the job is completed.', $notifications[1]->message);
+    }
+
+    public function test_it_sends_the_last_overdue_reminder_ninety_minutes_after_end_time(): void
+    {
+        $this->seedBookingFixture();
+        Carbon::setTestNow('2026-05-14 16:00:00');
+
+        $this->artisan('jobs:send-active-completion-reminders')->assertSuccessful();
+
+        $notifications = DB::table('user_notifications')
+            ->whereIn('type', ['job_complete_reminder_parent', 'job_complete_reminder_nanny'])
+            ->orderBy('id')
+            ->get();
+
+        $this->assertCount(2, $notifications);
+        $this->assertSame('Your booking ended 1 hour 30 minutes ago and no confirmation was received. Please click complete job in order for your syttr to get paid and to avoid any late fees.', $notifications[0]->message);
+        $this->assertStringContainsString('Job still incomplete', $notifications[1]->message);
+    }
+
+    public function test_it_sends_parent_and_nanny_job_started_notifications_at_start_time(): void
+    {
+        $this->seedBookingFixture();
+        Carbon::setTestNow('2026-05-14 09:30:00');
+
+        $this->artisan('jobs:send-active-completion-reminders')->assertSuccessful();
+
+        $notifications = DB::table('user_notifications')
+            ->whereIn('type', ['job_started_parent', 'job_started_nanny'])
+            ->orderBy('id')
+            ->get();
+
+        $this->assertCount(2, $notifications);
+        $this->assertSame('P1001', $notifications[0]->recipient_user_id);
+        $this->assertSame('job_started_parent', $notifications[0]->type);
+        $this->assertStringContainsString('started', strtolower((string) $notifications[0]->message));
+        $this->assertSame('N2001', $notifications[1]->recipient_user_id);
+        $this->assertSame('job_started_nanny', $notifications[1]->type);
+        $this->assertStringContainsString('started', strtolower((string) $notifications[1]->message));
+    }
+
+    public function test_it_sends_nanny_one_hour_before_job_start_notification(): void
+    {
+        $this->seedBookingFixture();
+        Carbon::setTestNow('2026-05-14 08:30:00');
+
+        $this->artisan('jobs:send-active-completion-reminders')->assertSuccessful();
+
+        $notifications = DB::table('user_notifications')
+            ->orderBy('id')
+            ->get();
+
+        $this->assertCount(1, $notifications);
+        $this->assertSame('N2001', $notifications[0]->recipient_user_id);
+        $this->assertSame('job_starts_in_one_hour_nanny', $notifications[0]->type);
+        $this->assertSame('Job Starts Soon', $notifications[0]->title);
+        $this->assertSame('Your job starts in one hour.', $notifications[0]->message);
+        $this->assertSame(0, DB::table('user_notifications')->where('recipient_user_id', 'P1001')->count());
     }
 
     public function test_it_auto_charges_late_completion_penalty_to_platform_only(): void
@@ -91,12 +197,6 @@ class ActiveJobCompletionRemindersTest extends TestCase
         $this->assertNull($penaltyTransaction->counterparty_user_id);
         $this->assertEquals(50.00, (float) $penaltyTransaction->amount);
 
-        $nannyPayout = DB::table('wallet_transactions')
-            ->where('type', 'job_payout')
-            ->first();
-
-        $this->assertNull($nannyPayout);
-
         $stripeRecord = DB::table('stripe_transactions')
             ->where('source', 'parent_job.late_completion_penalty')
             ->first();
@@ -104,18 +204,33 @@ class ActiveJobCompletionRemindersTest extends TestCase
         $this->assertNotNull($stripeRecord);
         $this->assertEquals(50.00, (float) $stripeRecord->amount);
 
+        $jobCharge = DB::table('wallet_transactions')
+            ->where('type', 'job_charge')
+            ->first();
+        $jobPayout = DB::table('wallet_transactions')
+            ->where('type', 'job_payout')
+            ->first();
+
+        $this->assertNotNull($jobCharge);
+        $this->assertEquals(125.00, (float) $jobCharge->amount);
+        $this->assertNotNull($jobPayout);
+        $this->assertEquals(125.00, (float) $jobPayout->amount);
+
+        $job = DB::table('parent_jobs')->where('id', 1)->first();
+        $this->assertSame('completed', $job->status);
+
         $parentNotification = DB::table('user_notifications')
             ->where('type', 'late_completion_penalty_charged')
             ->first();
-        $nannyNotification = DB::table('user_notifications')
-            ->where('type', 'late_completion_penalty_charged_notice')
-            ->first();
 
         $this->assertNotNull($parentNotification);
-        $this->assertNotNull($nannyNotification);
+        $this->assertSame('Your card on file was automatically charged due to delayed confirmation that your previous job ended.', $parentNotification->message);
+        $this->assertSame(1, DB::table('user_notifications')->where('type', 'late_completion_penalty_charged')->count());
+        $this->assertSame(0, DB::table('user_notifications')->where('type', 'late_completion_penalty_charged_notice')->count());
+        $this->assertSame(0, DB::table('user_notifications')->where('data->reminder_slot', 'after_120m')->count());
     }
 
-    public function test_it_skips_reminders_and_penalty_when_extra_hours_request_was_approved(): void
+    public function test_it_does_not_skip_due_reminders_when_extra_hours_request_was_approved(): void
     {
         $this->seedBookingFixture();
 
@@ -135,12 +250,14 @@ class ActiveJobCompletionRemindersTest extends TestCase
             'updated_at' => '2026-05-14 15:00:00',
         ]);
 
-        Carbon::setTestNow('2026-05-14 16:30:00');
+        Carbon::setTestNow('2026-05-14 14:00:00');
         Http::fake();
 
         $this->artisan('jobs:send-active-completion-reminders')->assertSuccessful();
 
-        $this->assertSame(1, DB::table('user_notifications')->count());
+        $this->assertSame(3, DB::table('user_notifications')->count());
+        $this->assertNotNull(DB::table('user_notifications')->where('type', 'job_complete_reminder_parent')->first());
+        $this->assertNotNull(DB::table('user_notifications')->where('type', 'job_complete_reminder_nanny')->first());
         $this->assertSame(0, DB::table('wallet_transactions')->count());
         $this->assertSame(0, DB::table('stripe_transactions')->count());
         Http::assertNothingSent();
@@ -207,6 +324,14 @@ class ActiveJobCompletionRemindersTest extends TestCase
 
     private function createSchema(): void
     {
+        Schema::dropIfExists('stripe_transactions');
+        Schema::dropIfExists('wallet_transactions');
+        Schema::dropIfExists('payment_methods');
+        Schema::dropIfExists('user_notifications');
+        Schema::dropIfExists('parent_job_applications');
+        Schema::dropIfExists('parent_jobs');
+        Schema::dropIfExists('users');
+
         Schema::create('users', function (Blueprint $table) {
             $table->id();
             $table->string('user_id', 20)->unique();

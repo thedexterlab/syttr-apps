@@ -44,7 +44,7 @@ export async function getResolvedApiKey(explicitApiKey?: string): Promise<string
   return processApiKey || getRuntimeApiKey();
 }
 
-const DEFAULT_REMOTE_API_BASE_URL = "https://syttr.zyronexlab.com/api/";
+const DEFAULT_REMOTE_API_BASE_URL = "https://api.syttr.zyronexlab.com/api/";
 const DEV_LOCAL_API_BASE_URL_OVERRIDE = readRuntimeEnv("EXPO_PUBLIC_LOCAL_API_BASE_URL");
 const FORCE_REMOTE_API_IN_DEV = readRuntimeFlag("EXPO_PUBLIC_FORCE_REMOTE_API");
 
@@ -179,6 +179,13 @@ const logApi = (event: string, payload: Record<string, unknown>) => {
   console.log(`[API] ${event}`, payload);
 };
 
+const hasNonEmptyHeader = (headers: Record<string, string>, name: string) => {
+  const expected = name.toLowerCase();
+  return Object.entries(headers).some(
+    ([key, value]) => key.toLowerCase() === expected && String(value || "").trim() !== ""
+  );
+};
+
 async function request<TResponse = any>(path: string, options: RequestOptions = {}) {
   const isAbsolute = /^https?:\/\//i.test(path);
   const normalizedPath = normalizePath(path).toLowerCase();
@@ -202,6 +209,23 @@ async function request<TResponse = any>(path: string, options: RequestOptions = 
 
   let lastNetworkError: any = null;
   let firstTimeoutError: Error | null = null;
+  const optionHeaders = options.headers ?? {};
+  const defaultHeaders: Record<string, string> = {};
+
+  if (!isAbsolute) {
+    const [sessionAuth, resolvedApiKey] = await Promise.all([
+      getAuthHeaders(),
+      getResolvedApiKey(),
+    ]);
+
+    if (sessionAuth.Authorization && !hasNonEmptyHeader(optionHeaders, "authorization")) {
+      defaultHeaders.Authorization = sessionAuth.Authorization;
+    }
+
+    if (resolvedApiKey && !hasNonEmptyHeader(optionHeaders, "x-api-key")) {
+      defaultHeaders["x-api-key"] = resolvedApiKey;
+    }
+  }
 
   for (let i = 0; i < urls.length; i += 1) {
     const url = urls[i];
@@ -220,6 +244,7 @@ async function request<TResponse = any>(path: string, options: RequestOptions = 
       const mergedHeaders = {
         Accept: "application/json",
         ...(isForm || method === "GET" || !hasBody ? {} : { "Content-Type": "application/json" }),
+        ...defaultHeaders,
         ...(options.headers ?? {}),
       };
       const { useSessionAuth, ...fetchOptions } = options;
@@ -338,6 +363,38 @@ export async function apiRequest<TResponse = any>(
 ) {
   return request<TResponse>(path, options);
 }
+
+export const isVerificationRequiredApiError = (error: any) => {
+  const payload =
+    error?.payload ||
+    error?.response?.data ||
+    error?.data ||
+    {};
+  const message = String(
+    error?.message ||
+      payload?.message ||
+      payload?.error ||
+      ""
+  ).toLowerCase();
+  const code = String(
+    error?.code ||
+      payload?.code ||
+      ""
+  ).toLowerCase();
+
+  return (
+    payload?.verification_required === true ||
+    code.includes("verification_required") ||
+    message.includes("verification is required before accessing") ||
+    message.includes("verification required") ||
+    message.includes("nanny_verification_required") ||
+    (
+      message.includes("payment") &&
+      message.includes("background check") &&
+      message.includes("admin approval")
+    )
+  );
+};
 
 export async function registerPushToken(
   payload: {
@@ -591,7 +648,21 @@ type SignupNannyPayload = {
   email: string;
   password: string;
   password_confirmation: string;
+  state: string;
 };
+
+export type AvailableState = { code: string; name: string };
+
+export async function getAvailableStates(): Promise<AvailableState[]> {
+  const response: any = await request("available-states");
+  const states = Array.isArray(response?.data) ? response.data : [];
+  return states
+    .map((state: any) => ({
+      code: String(state?.code || "").trim().toUpperCase(),
+      name: String(state?.name || "").trim(),
+    }))
+    .filter((state: AvailableState) => state.code && state.name);
+}
 
 export async function signupNanny(payload: SignupNannyPayload) {
   const full = payload.fullname?.trim() || '';
@@ -601,6 +672,7 @@ export async function signupNanny(payload: SignupNannyPayload) {
       name: full || payload.email,
       email: payload.email,
       password: payload.password,
+      state: payload.state,
     }),
   });
 }
@@ -610,6 +682,7 @@ type SignupClientPayload = {
   email: string;
   password: string;
   password_confirmation: string;
+  state: string;
 };
 
 export async function signupClient(payload: SignupClientPayload) {
@@ -619,6 +692,7 @@ export async function signupClient(payload: SignupClientPayload) {
       name: payload.name,
       email: payload.email,
       password: payload.password,
+      state: payload.state,
     }),
   });
 }
@@ -646,6 +720,7 @@ export async function registerClientWithProfile(
       email,
       password,
       password_confirmation: passwordConfirmation,
+      state: String(payload?.state || "").trim(),
     }),
   });
 }
@@ -922,6 +997,9 @@ export async function registerNannyWithProfile(
 
   const shouldFallbackToLogin = (error: any) => {
     const message = String(error?.message || "").toLowerCase();
+    if (message.includes("signup is currently not available in this state")) {
+      return false;
+    }
     return (
       error?.status === 422 ||
       message.includes("timed out") ||
@@ -962,6 +1040,7 @@ export async function registerNannyWithProfile(
         name: fullName,
         email,
         password,
+        state: String(payload?.state || "").trim(),
       }),
     });
     const extracted = extractAuthFields(signupResp);
@@ -1810,10 +1889,36 @@ export const isRejectedVerificationStatus = (value?: string | null) => {
   );
 };
 
+const isIncompleteVerificationStatus = (value?: string | null) => {
+  const raw = normalizeVerificationSignal(value);
+  if (!raw) return false;
+  return (
+    raw.includes("payment_required") ||
+    raw.includes("payment required") ||
+    raw.includes("payment_pending") ||
+    raw.includes("payment pending") ||
+    raw.includes("background_check_pending") ||
+    raw.includes("background check pending") ||
+    raw.includes("background_check_required") ||
+    raw.includes("background check required") ||
+    raw.includes("background_check_completed") ||
+    raw.includes("background check completed") ||
+    raw.includes("admin_approval_pending") ||
+    raw.includes("admin approval pending") ||
+    raw.includes("pending_verification") ||
+    raw.includes("pending verification") ||
+    raw.includes("verification_required") ||
+    raw.includes("verification required") ||
+    raw.includes("under_review") ||
+    raw.includes("under review")
+  );
+};
+
 export const isApprovedVerificationStatus = (value?: string | null) => {
   const raw = normalizeVerificationSignal(value);
   if (!raw) return false;
   if (isRejectedVerificationStatus(raw)) return false;
+  if (isIncompleteVerificationStatus(raw)) return false;
 
   // QuickApp milestones indicate the applicant flow, not final verification approval.
   if (
@@ -1860,8 +1965,17 @@ export const isUserRejectedFromSources = (payload: VerificationSourcePayload) =>
 };
 
 export const isUserVerifiedFromSources = (payload: VerificationSourcePayload) => {
+  if (payload.verificationRequired === true) {
+    return false;
+  }
   if (payload.isVerified === true) {
     return true;
+  }
+  if (payload.verificationRequired === false) {
+    return true;
+  }
+  if (payload.isVerified === false) {
+    return false;
   }
   const statusValues = [
     payload.adminStatus,

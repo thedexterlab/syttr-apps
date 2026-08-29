@@ -22,7 +22,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { addFavoriteSyttr, apiRequest, BASE_URL, sanitizeToken } from "../Api";
+import { addFavoriteSyttr, apiRequest, BASE_URL, isVerificationRequiredApiError, sanitizeToken } from "../Api";
 import { getPusherDiagnostics, reconnectPusher, subscribeToChat } from "../../lib/pusherClient";
 import { rewriteLoopbackAbsoluteUrl } from "../../lib/urlHosts";
 import { rf, rs } from "../utils/responsive";
@@ -79,6 +79,7 @@ type Props = {
     userId?: number | string;
     name?: string;
   }) => void;
+  onRequireVerification?: () => void;
 };
 
 /* ----------------------------- CONFIG ----------------------------- */
@@ -250,6 +251,7 @@ export default function ClientChatScreen({
   onBack,
   onCloseChat,
   onViewProfile,
+  onRequireVerification,
 }: Props) {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
@@ -574,6 +576,11 @@ export default function ClientChatScreen({
       // variants reuse ids and id-based upsert would collapse older rows.
       setMessages(normalized);
     } catch (e) {
+      if (isVerificationRequiredApiError(e)) {
+        setMessages([]);
+        onRequireVerification?.();
+        return;
+      }
       console.error("load messages error", e instanceof Error ? e.message : e);
       if (!options?.silent) {
         Alert.alert("Chat", "We couldn't load your messages. Try again.");
@@ -874,6 +881,10 @@ export default function ClientChatScreen({
 
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
     } catch (e) {
+      if (isVerificationRequiredApiError(e)) {
+        onRequireVerification?.();
+        return;
+      }
       console.error("send error", e instanceof Error ? e.message : e);
       Alert.alert("Chat", "We couldn’t send that right now. Please try again.");
     } finally {
@@ -2134,4 +2145,3 @@ const styles = StyleSheet.create({
     paddingHorizontal: rs(18),
   },
 });
-

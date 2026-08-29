@@ -61,6 +61,7 @@ class WalletController extends Controller
 
         $this->syncPendingStripeWithdrawals($userId);
         $items = WalletTransaction::query()
+            ->with('job')
             ->where('user_id', $userId)
             ->latest()
             ->get()
@@ -596,6 +597,17 @@ class WalletController extends Controller
     private function serialize(WalletTransaction $transaction): array
     {
         $meta = is_array($transaction->meta) ? $transaction->meta : [];
+        $job = $transaction->job;
+        $earningTimezone = $job?->localTimezone()
+            ?: (isset($meta['timezone']) ? (string) $meta['timezone'] : null);
+        $earningDate = $job?->start_date?->format('Y-m-d')
+            ?: (isset($meta['start_date']) ? (string) $meta['start_date'] : null);
+        $earningAmount = null;
+        if ($transaction->type === 'job_payout' && $transaction->direction === 'credit') {
+            $earningAmount = isset($meta['net_amount'])
+                ? (float) $meta['net_amount']
+                : (float) $transaction->amount;
+        }
 
         return [
             'id' => $transaction->id,
@@ -624,6 +636,9 @@ class WalletController extends Controller
             'stripe_payout_id' => isset($meta['stripe_payout_id']) ? (string) $meta['stripe_payout_id'] : null,
             'stripe_connect_account_id' => isset($meta['stripe_connect_account_id']) ? (string) $meta['stripe_connect_account_id'] : null,
             'stripe_external_account_id' => isset($meta['stripe_external_account_id']) ? (string) $meta['stripe_external_account_id'] : null,
+            'earning_amount' => $earningAmount,
+            'earning_date' => $earningDate,
+            'earning_timezone' => $earningTimezone,
             'meta' => $meta,
             'created_at' => optional($transaction->created_at)->toISOString(),
             'updated_at' => optional($transaction->updated_at)->toISOString(),

@@ -60,13 +60,13 @@ const isNotificationRead = (
 
 const isChatMessageType = (type: any) => {
   const value = String(type || "").trim().toLowerCase();
-  return value === "chat_message" || value === "chat";
+  return value === "chat_message" || value === "chat" || value === "new_message";
 };
 
 const isRateParentPromptNotification = (item?: NotificationItem | null) => {
   if (!item) return false;
   const type = String(item.type || "").trim().toLowerCase();
-  if (type === "rate_parent_prompt" || type === "rate-parent-prompt") return true;
+  if (type) return type === "rate_parent_prompt" || type === "rate-parent-prompt";
   const haystack = `${item.title || ""} ${item.subtitle || ""} ${item.message || ""}`.toLowerCase();
   return haystack.includes("rate parent");
 };
@@ -201,6 +201,34 @@ type Props = {
   onMessages?: () => void;
   onNotifications?: () => void;
   onSettings?: () => void;
+  onRequireVerification?: () => void;
+  initialRatingNotification?: NotificationItem | null;
+};
+
+const isVerificationRequiredError = (error: any) => {
+  const message = String(
+    error?.message ||
+      error?.payload?.message ||
+      error?.response?.data?.message ||
+      ""
+  ).toLowerCase();
+  const code = String(
+    error?.code ||
+      error?.payload?.code ||
+      error?.response?.data?.code ||
+      ""
+  ).toLowerCase();
+
+  return (
+    code.includes("verification_required") ||
+    message.includes("verification is required before accessing") ||
+    message.includes("verification required") ||
+    (
+      message.includes("payment") &&
+      message.includes("background check") &&
+      message.includes("admin approval")
+    )
+  );
 };
 
 
@@ -214,6 +242,8 @@ export default function NannyNotificationsScreen({
   onMessages,
   onNotifications,
   onSettings,
+  onRequireVerification,
+  initialRatingNotification,
 }: Props) {
   const insets = useSafeAreaInsets();
 
@@ -354,7 +384,7 @@ export default function NannyNotificationsScreen({
         : [];
       const data: NotificationItem[] = rawData
         .map((entry) => normalizeIncomingNotification(entry))
-        .filter((entry) => !!entry && !isChatMessageType((entry as NotificationItem).type))
+        .filter((entry) => !!entry)
         .filter(Boolean) as NotificationItem[];
 
       const hireRequests = await fetchHireRequests(nannyId, authHeader, apiKey);
@@ -371,6 +401,11 @@ export default function NannyNotificationsScreen({
       });
       setItems(visible);
     } catch (e: any) {
+      if (isVerificationRequiredError(e)) {
+        setItems([]);
+        onRequireVerification?.();
+        return;
+      }
       console.log("Syttr notifications fetch error", e);
       if (e?.status === 401) {
         if (!silent) {
@@ -496,10 +531,13 @@ export default function NannyNotificationsScreen({
               isRead: row?.isRead,
               is_read: row?.is_read,
             }),
-            raw: row,
-          };
-        });
+        raw: row,
+      };
+    });
     } catch (e) {
+      if (isVerificationRequiredError(e)) {
+        throw e;
+      }
       console.log("[NannyNotifications] hire-requests error", e);
       return [];
     }
@@ -577,11 +615,13 @@ const buildParentStatsLabel = (parent: any, job: any) => {
     const body = String(data.message || data.body || payload.message || "").trim();
     const createdAt =
       data.created_at || payload.created_at || data.time;
-    const type = String(data.type || payload.type || "").trim();
+    const type = String(data.type || payload.type || data.event || payload.event || "").trim();
     const isChatMessage = isChatMessageType(type);
     const jobId =
       data.job_id ||
+      data.booking_id ||
       payload.job_id ||
+      payload.booking_id ||
       data.job?.id ||
       payload.job?.id ||
       data.meta?.job_id ||
@@ -1156,6 +1196,12 @@ const buildParentStatsLabel = (parent: any, job: any) => {
     setRatingReview("");
     setRatingModalVisible(true);
   };
+
+  useEffect(() => {
+    if (isRateParentPromptNotification(initialRatingNotification)) {
+      openRateParentModal(initialRatingNotification as NotificationItem);
+    }
+  }, [initialRatingNotification]);
 
   const closeRateParentModal = () => {
     if (ratingSubmitting) return;

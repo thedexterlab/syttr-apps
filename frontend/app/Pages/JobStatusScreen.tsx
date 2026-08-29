@@ -17,6 +17,7 @@ import {
   apiRequest,
   deleteJob as deleteJobApi,
   getRuntimeApiKey,
+  isVerificationRequiredApiError,
   sanitizeToken,
 } from "../Api";
 import SafeScreen from "../components/SafeScreen";
@@ -31,6 +32,7 @@ type Props = {
   navigation?: any;
   onBack?: () => void;
   onOpenBooking?: (event: any, date: string) => void;
+  onRequireVerification?: () => void;
 };
 
 type JobStatusItem = {
@@ -680,7 +682,7 @@ const buildHireRequestStatusItem = (
   };
 };
 
-export default function JobStatusScreen({ navigation, onBack, onOpenBooking }: Props) {
+export default function JobStatusScreen({ navigation, onBack, onOpenBooking, onRequireVerification }: Props) {
   const [jobs, setJobs] = useState<JobStatusItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -740,11 +742,15 @@ export default function JobStatusScreen({ navigation, onBack, onOpenBooking }: P
       setJobs((prev) => prev.filter((entry) => entry.id !== job.id));
       Alert.alert("Deleted", "Job deleted successfully.");
     } catch (e: any) {
+      if (isVerificationRequiredApiError(e)) {
+        onRequireVerification?.();
+        return;
+      }
       Alert.alert("Delete failed", e?.message || "Unable to delete this job right now.");
     } finally {
       setDeletingJobId("");
     }
-  }, []);
+  }, [onRequireVerification]);
 
   const confirmRemoveJob = useCallback(
     (job: JobStatusItem) => {
@@ -810,6 +816,9 @@ export default function JobStatusScreen({ navigation, onBack, onOpenBooking }: P
           body: JSON.stringify({ user_id: effectiveUserId, per_page: 10 }),
         });
       } catch (error: any) {
+        if (isVerificationRequiredApiError(error)) {
+          throw error;
+        }
         json = await apiRequest<any>(`job/index?user_id=${encodeURIComponent(effectiveUserId)}`, {
           method: "GET",
           headers,
@@ -1021,13 +1030,19 @@ export default function JobStatusScreen({ navigation, onBack, onOpenBooking }: P
 
       setJobs(merged);
     } catch (e: any) {
+      if (isVerificationRequiredApiError(e)) {
+        setErrorMessage("");
+        setJobs([]);
+        onRequireVerification?.();
+        return;
+      }
       setErrorMessage(e?.message || "Could not load job status.");
       setJobs([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [onRequireVerification]);
 
   useEffect(() => {
     void loadJobs();

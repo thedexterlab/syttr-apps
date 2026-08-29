@@ -30,6 +30,7 @@ import {
   GOOGLE_MAPS_KEY,
   getNannyRatingSummary,
   getRuntimeApiKey,
+  isVerificationRequiredApiError,
   removeFavoriteSyttr,
 } from "../Api";
 import { resolveSessionImageUrl } from "../../lib/nannySessionProfile";
@@ -446,7 +447,7 @@ const toLooseNumberOrNull = (value: unknown): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-const extractHourlyRateValue = (profile?: NannyProfile | null): number | null => {
+const extractHourlyRateValue = (profile?: Nanny | null): number | null => {
   if (!profile) return null;
 
   const directRate =
@@ -473,9 +474,9 @@ const extractHourlyRateValue = (profile?: NannyProfile | null): number | null =>
 };
 
 const mergeNannyPreservingRate = (
-  incoming?: NannyProfile | null,
-  fallback?: NannyProfile | null
-): NannyProfile | null => {
+  incoming?: Nanny | null,
+  fallback?: Nanny | null
+): Nanny | null => {
   if (!incoming && !fallback) return null;
   if (!incoming) return fallback || null;
   if (!fallback) return incoming;
@@ -618,6 +619,7 @@ type Props = {
   onBack?: () => void;
   onMessage?: (params: any) => void;
   onRequirePayment?: () => void;
+  onRequireVerification?: () => void;
 };
 
 /* ----------------------------- SCREEN ----------------------------- */
@@ -628,6 +630,7 @@ export default function NannyProfileScreen({
   onBack,
   onMessage,
   onRequirePayment,
+  onRequireVerification,
 }: Props) {
   const { width, height } = useWindowDimensions();
   const isVerySmall = width <= 320;
@@ -688,7 +691,7 @@ export default function NannyProfileScreen({
     reviews: 0,
   });
 
-  const { kids, loadChildren } = useManageChildStore();
+  const { kids, loadChildren } = useManageChildStore(onRequireVerification);
   const displayName =
     String(route?.params?.name || "").trim() ||
     nanny?.fullname ||
@@ -751,7 +754,7 @@ export default function NannyProfileScreen({
         (await AsyncStorage.getItem("user_id")) || (await AsyncStorage.getItem("id"))
       );
       if (!active) return;
-      setCurrentUserId(userId);
+      setCurrentUserId(String(userId || ""));
     })();
 
     return () => {
@@ -867,7 +870,11 @@ export default function NannyProfileScreen({
       const hasAny = list.length > 0;
       setHasPaymentMethod(hasAny);
       return hasAny;
-    } catch {
+    } catch (error: any) {
+      if (isVerificationRequiredApiError(error)) {
+        onRequireVerification?.();
+        return false;
+      }
       setHasPaymentMethod(true);
       return null;
     } finally {
@@ -1014,7 +1021,12 @@ export default function NannyProfileScreen({
 
       const detailsJson = await apiRequest<any>(`nannies/${encodeURIComponent(targetId)}`, {
         headers: authHeaders,
-      }).catch(() => null);
+      }).catch((error) => {
+        if (isVerificationRequiredApiError(error)) {
+          onRequireVerification?.();
+        }
+        return null;
+      });
       if (detailsJson) {
         const normalized = normalizeNanny(
           detailsJson?.data || detailsJson?.nanny || detailsJson
@@ -1028,7 +1040,12 @@ export default function NannyProfileScreen({
       const profileJson = await apiRequest<any>(
         `profiles/syttrs?user_id=${encodeURIComponent(targetId)}`,
         { headers: authHeaders }
-      ).catch(() => null);
+      ).catch((error) => {
+        if (isVerificationRequiredApiError(error)) {
+          onRequireVerification?.();
+        }
+        return null;
+      });
       const profileList = Array.isArray(profileJson)
         ? profileJson
         : Array.isArray(profileJson?.data)
@@ -1041,7 +1058,12 @@ export default function NannyProfileScreen({
         const availabilityJson = await apiRequest<any>(
           `nanny/getavailability?nanny_id=${encodeURIComponent(targetId)}`,
           { headers: authHeaders }
-        ).catch(() => null);
+        ).catch((error) => {
+          if (isVerificationRequiredApiError(error)) {
+            onRequireVerification?.();
+          }
+          return null;
+        });
         availabilityRows = Array.isArray(availabilityJson)
           ? availabilityJson
           : Array.isArray(availabilityJson?.availability)
@@ -1066,7 +1088,11 @@ export default function NannyProfileScreen({
       if (fallbackNanny) {
         setNanny(mergeNannyPreservingRate(fallbackNanny, currentNanny));
       }
-    } catch {
+    } catch (error: any) {
+      if (isVerificationRequiredApiError(error)) {
+        onRequireVerification?.();
+        return;
+      }
       setNanny((prev) => prev || null);
     } finally {
       setLoading(false);
@@ -1942,6 +1968,10 @@ export default function NannyProfileScreen({
                 body: JSON.stringify(payload),
               });
               if (json?.success === false) {
+                if (isVerificationRequiredApiError({ payload: json, message: json?.message })) {
+                  onRequireVerification?.();
+                  return;
+                }
                 Alert.alert(
                   "Hire request",
                   json?.message || "Something went wrong"
@@ -1958,6 +1988,10 @@ export default function NannyProfileScreen({
               setSelectedChildIds([]);
               Alert.alert("Request Sent", json?.message || "Hiring request submitted.");
             } catch (e: any) {
+              if (isVerificationRequiredApiError(e)) {
+                onRequireVerification?.();
+                return;
+              }
               Alert.alert("Hire request", e?.message || "Unable to send hire request.");
             } finally {
               setHireLoading(false);

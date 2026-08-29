@@ -15,9 +15,10 @@ import { Kid, useManageChildStore } from "./manageChildStore";
 type Props = {
   navigation?: { goBack?: () => void };
   onBack?: () => void;
+  onRequireVerification?: () => void;
 };
 
-export default function ManageChildScreen({ navigation, onBack }: Props) {
+export default function ManageChildScreen({ navigation, onBack, onRequireVerification }: Props) {
   const {
     kids,
     addChild,
@@ -27,7 +28,7 @@ export default function ManageChildScreen({ navigation, onBack }: Props) {
     isAdding,
     isEditing,
     isDeleting,
-  } = useManageChildStore();
+  } = useManageChildStore(onRequireVerification);
   const [sheetVisible, setSheetVisible] = useState(false);
   const [selected, setSelected] = useState<{ kid?: Kid; index?: number }>({});
   const childList = useMemo(() => (Array.isArray(kids) ? kids : []), [kids]);

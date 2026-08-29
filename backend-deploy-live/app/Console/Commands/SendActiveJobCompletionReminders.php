@@ -31,15 +31,15 @@ class SendActiveJobCompletionReminders extends Command
         ['offset_minutes' => 5, 'slot' => 'after_5m'],
     ];
 
+    private const NANNY_START_REMINDER_OFFSET_MINUTES = -60;
+
     private const REPEATING_OVERDUE_REMINDER_MINUTES = 30;
 
     private const AUTO_CHARGE_OFFSET_MINUTES = 120;
 
     public function handle(): int
     {
-        $timezone = config('app.timezone');
         $acceptedStatuses = ['accepted', 'accept', 'approved', 'confirmed', 'confirm'];
-        $now = Carbon::now($timezone);
 
         $jobs = ParentJob::query()
             ->whereNotIn('status', ['canceled', 'cancelled', 'completed'])
@@ -57,6 +57,8 @@ class SendActiveJobCompletionReminders extends Command
 
         $sent = 0;
         foreach ($jobs as $job) {
+            $timezone = $this->jobTimezone($job);
+            $now = Carbon::now($timezone);
             $startAt = $this->buildJobStartAt($job, $timezone);
             $endAt = $this->buildJobEndAt($job, $timezone, $startAt);
             if (! $startAt || ! $endAt) {
@@ -72,6 +74,13 @@ class SendActiveJobCompletionReminders extends Command
             if ($this->isDueAtMinute($now, $startAt)) {
                 if ($this->sendJobStartedNotificationPair($job, $acceptedApplication, $startAt)) {
                     $sent += 2;
+                }
+            }
+
+            $nannyStartReminderAt = $startAt->copy()->addMinutes(self::NANNY_START_REMINDER_OFFSET_MINUTES);
+            if ($this->isDueAtMinute($now, $nannyStartReminderAt)) {
+                if ($this->sendNannyStartReminder($job, $acceptedApplication, $startAt)) {
+                    $sent++;
                 }
             }
 
@@ -107,6 +116,11 @@ class SendActiveJobCompletionReminders extends Command
 
         $this->info('Active job completion notifications/charges processed: '.$sent);
         return self::SUCCESS;
+    }
+
+    private function jobTimezone(ParentJob $job): string
+    {
+        return $job->localTimezone();
     }
 
     private function buildJobStartAt(ParentJob $job, string $timezone): ?Carbon
@@ -220,6 +234,7 @@ class SendActiveJobCompletionReminders extends Command
                     'application_id' => $application->id,
                     'nanny_id' => $application->nanny_id,
                     'scheduled_end_at' => $scheduledEndAt->toISOString(),
+                    'timezone' => $scheduledEndAt->timezoneName,
                     'reminder_slot' => $slot,
                 ],
                 $application->nanny_id
@@ -238,6 +253,7 @@ class SendActiveJobCompletionReminders extends Command
                     'application_id' => $application->id,
                     'parent_user_id' => $job->user_id,
                     'scheduled_end_at' => $scheduledEndAt->toISOString(),
+                    'timezone' => $scheduledEndAt->timezoneName,
                     'reminder_slot' => $slot,
                 ],
                 $job->user_id
@@ -279,6 +295,7 @@ class SendActiveJobCompletionReminders extends Command
                     'application_id' => $application->id,
                     'nanny_id' => $application->nanny_id,
                     'scheduled_start_at' => $scheduledStartAt->toISOString(),
+                    'timezone' => $scheduledStartAt->timezoneName,
                 ],
                 $application->nanny_id
             );
@@ -296,6 +313,7 @@ class SendActiveJobCompletionReminders extends Command
                     'application_id' => $application->id,
                     'parent_user_id' => $job->user_id,
                     'scheduled_start_at' => $scheduledStartAt->toISOString(),
+                    'timezone' => $scheduledStartAt->timezoneName,
                 ],
                 $job->user_id
             );
@@ -304,20 +322,43 @@ class SendActiveJobCompletionReminders extends Command
         return ! $parentSent || ! $nannySent;
     }
 
+    private function sendNannyStartReminder(
+        ParentJob $job,
+        ParentJobApplication $application,
+        Carbon $scheduledStartAt
+    ): bool {
+        $nannyKey = 'job:'.$job->id.':starts-in-one-hour:nanny';
+        $nannySent = $this->notificationExists($application->nanny_id, 'job_starts_in_one_hour_nanny', $nannyKey);
+
+        if ($nannySent) {
+            return false;
+        }
+
+        NotificationController::createForUser(
+            $application->nanny_id,
+            'job_starts_in_one_hour_nanny',
+            'Job Starts Soon',
+            'Your job starts in one hour.',
+            [
+                'notification_key' => $nannyKey,
+                'job_id' => $job->id,
+                'application_id' => $application->id,
+                'parent_user_id' => $job->user_id,
+                'scheduled_start_at' => $scheduledStartAt->toISOString(),
+                'timezone' => $scheduledStartAt->timezoneName,
+                'reminder_slot' => 'before_start_60m',
+            ],
+            $job->user_id
+        );
+
+        return true;
+    }
+
     private function parentReminderMessage(string $slot): string
     {
         if (preg_match('/^after_(\d+)m$/', $slot, $matches) === 1) {
             $minutes = (int) $matches[1];
-
-            if ($minutes === 5) {
-                return 'Your booking ended 5 minutes ago and is still not completed. Complete the job now. If you needed more time, you were required to request extra hours before the scheduled end time.';
-            }
-
-            if ($minutes === 30) {
-                return 'Your booking ended 30 minutes ago and is still incomplete. Please tap Complete Job now to avoid late fees.';
-            }
-
-            return 'Your booking ended '.$this->formatMinutesForMessage($minutes).' ago and is still not completed. The nanny will not receive payment until you complete the job, and you may receive a penalty for the delay. Any late completion penalties or extra charges after the scheduled end time go to Syttr LLC only.';
+            return 'Your booking ended '.$this->formatMinutesForMessage($minutes).' ago and no confirmation was received. Please click complete job in order for your syttr to get paid and to avoid any late fees.';
         }
 
         return match ($slot) {
@@ -437,6 +478,7 @@ class SendActiveJobCompletionReminders extends Command
                 'meta' => [
                     'penalty_hours' => $penaltyHours,
                     'scheduled_end_at' => $scheduledEndAt->toISOString(),
+                    'timezone' => $scheduledEndAt->timezoneName,
                 ],
             ]);
 
@@ -512,6 +554,7 @@ class SendActiveJobCompletionReminders extends Command
                     'penalty_hours' => $penaltyHours,
                     'hourly_rate' => $hourlyRate,
                     'scheduled_end_at' => $scheduledEndAt->toISOString(),
+                    'timezone' => $scheduledEndAt->timezoneName,
                     'penalty_beneficiary' => 'Syttr LLC',
                 ],
             ]);
@@ -541,6 +584,7 @@ class SendActiveJobCompletionReminders extends Command
                             'penalty_hours' => $penaltyHours,
                             'hourly_rate' => $hourlyRate,
                             'scheduled_end_at' => $scheduledEndAt->toISOString(),
+                            'timezone' => $scheduledEndAt->timezoneName,
                             'penalty_beneficiary' => 'Syttr LLC',
                             'nanny_original_payout_unchanged' => true,
                         ],
@@ -552,11 +596,7 @@ class SendActiveJobCompletionReminders extends Command
                 $job->user_id,
                 'late_completion_penalty_charged',
                 'Late Completion Charge Applied',
-                sprintf(
-                    'Your payment method on file was automatically charged on %s for services provided by %s related to the scheduled job.',
-                    now()->format('F j, Y'),
-                    $this->resolveSyttrDisplayName($application)
-                ),
+                'Your card on file was automatically charged due to delayed confirmation that your previous job ended.',
                 [
                     'notification_key' => $chargeKey,
                     'job_id' => $job->id,
@@ -564,6 +604,7 @@ class SendActiveJobCompletionReminders extends Command
                     'amount' => $amount,
                     'penalty_hours' => $penaltyHours,
                     'scheduled_end_at' => $scheduledEndAt->toISOString(),
+                    'timezone' => $scheduledEndAt->timezoneName,
                 ],
                 $application->nanny_id
             );
@@ -596,14 +637,4 @@ class SendActiveJobCompletionReminders extends Command
         return 0.0;
     }
 
-    private function resolveSyttrDisplayName(ParentJobApplication $application): string
-    {
-        $nanny = $application->relationLoaded('nanny')
-            ? $application->nanny
-            : $application->nanny()->first();
-
-        $name = trim((string) ($nanny?->name ?? ''));
-
-        return $name !== '' ? "Syttr ({$name})" : 'Syttr';
-    }
 }

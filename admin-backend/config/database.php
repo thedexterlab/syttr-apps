@@ -59,6 +59,7 @@ return [
             'sslmode' => env('APP_DATA_DB_SSLMODE', 'prefer'),
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 PDO::MYSQL_ATTR_SSL_CA => env('APP_DATA_MYSQL_ATTR_SSL_CA'),
+                PDO::ATTR_TIMEOUT => (int) env('APP_DATA_DB_TIMEOUT', 5),
             ]) : [],
         ],
 

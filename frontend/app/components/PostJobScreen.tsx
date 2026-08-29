@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { apiRequest, BASE_URL, GOOGLE_MAPS_KEY, sanitizeToken } from "../Api";
+import { apiRequest, BASE_URL, GOOGLE_MAPS_KEY, isVerificationRequiredApiError, sanitizeToken } from "../Api";
 import { geocodeAddress } from "../utils/geocodeAddress";
 import { Location } from "../utils/safeLocation";
 import React, { useEffect, useMemo, useState } from "react";
@@ -49,6 +49,7 @@ type Props = {
   onSuccess?: () => void;
   onAddChild?: () => void;
   onRequirePayment?: () => void;
+  onRequireVerification?: () => void;
 };
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
@@ -345,6 +346,7 @@ export default function PostJobScreen({
   onSuccess,
   onAddChild,
   onRequirePayment,
+  onRequireVerification,
 }: Props) {
   const [children, setChildren] = useState<Child[]>([]);
   const [loadingChildren, setLoadingChildren] = useState<boolean>(true);
@@ -468,9 +470,7 @@ export default function PostJobScreen({
     const val = (raw || "").toLowerCase().trim();
     return (
       val === "verified" ||
-      val === "approved" ||
-      val === "completed" ||
-      val === "quickapp-completed"
+      val === "approved"
     );
   };
 
@@ -529,7 +529,11 @@ export default function PostJobScreen({
       const hasAny = list.length > 0;
       setHasPaymentMethod(hasAny);
       return hasAny;
-    } catch {
+    } catch (error: any) {
+      if (isVerificationRequiredApiError(error)) {
+        onRequireVerification?.();
+        return false;
+      }
       // Match the runtime fallback in requirePaymentMethod so the CTA does not stay blocked.
       setHasPaymentMethod(true);
       return null;
@@ -718,6 +722,10 @@ export default function PostJobScreen({
       else if (Array.isArray(json.kids)) setChildren(json.kids);
       else setChildren([]);
     } catch (e) {
+      if (isVerificationRequiredApiError(e)) {
+        onRequireVerification?.();
+        return;
+      }
       console.log("Error loading children", e instanceof Error ? e.message : e);
       setChildren([]);
     } finally {
@@ -911,9 +919,17 @@ export default function PostJobScreen({
           ]);
         }
       } else {
+        if (isVerificationRequiredApiError({ payload: json, message: json?.message || json?.error })) {
+          onRequireVerification?.();
+          return;
+        }
         showAlert("Error", json?.message || json?.error || "Unable to post job right now.");
       }
     } catch (e: any) {
+      if (isVerificationRequiredApiError(e)) {
+        onRequireVerification?.();
+        return;
+      }
       showAlert("Network error", e?.message || "Something went wrong");
     } finally {
       setPosting(false);

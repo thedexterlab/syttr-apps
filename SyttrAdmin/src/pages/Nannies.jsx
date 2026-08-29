@@ -210,9 +210,9 @@ function Nannies() {
         if (imageUrls.length) {
           console.log('Nanny profile images:', imageUrls)
         }
-      } catch {
+      } catch (error) {
         if (!isMounted) return
-        setError('Unable to load nannies.')
+        setError(error?.data?.message || error?.message || 'Unable to load nannies.')
         setNannies([])
       } finally {
         if (isMounted) setLoading(false)

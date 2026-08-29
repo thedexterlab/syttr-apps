@@ -3,6 +3,7 @@
 
 # Secrets
 *.ppk
+*.pem
 .env
 .env.*
 !.env.example

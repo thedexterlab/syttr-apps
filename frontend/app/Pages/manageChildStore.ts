@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCallback, useEffect, useState } from "react";
-import { addKid, deleteKid, getUserKids, updateKid } from "../Api";
+import { addKid, deleteKid, getUserKids, isVerificationRequiredApiError, updateKid } from "../Api";
 
 export type Kid = {
   id?: string;
@@ -51,7 +51,7 @@ const normalizeKid = (row: any): Kid => ({
   anythingElse: String(row?.notes ?? row?.anything_else ?? "").trim(),
 });
 
-export function useManageChildStore() {
+export function useManageChildStore(onVerificationRequired?: () => void) {
   const [kids, setKids] = useState<Kid[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
@@ -82,6 +82,11 @@ export function useManageChildStore() {
           return;
         }
       } catch (e) {
+        if (isVerificationRequiredApiError(e)) {
+          setKids([]);
+          onVerificationRequired?.();
+          return;
+        }
         console.log("[Kids] load error", e);
       }
 
@@ -98,7 +103,7 @@ export function useManageChildStore() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [onVerificationRequired]);
 
   useEffect(() => {
     loadChildren();
@@ -132,6 +137,10 @@ export function useManageChildStore() {
       await loadChildren();
       return true;
     } catch (e) {
+      if (isVerificationRequiredApiError(e)) {
+        onVerificationRequired?.();
+        return false;
+      }
       console.log("[Kids] add error", e);
       return false;
     } finally {
@@ -174,6 +183,10 @@ export function useManageChildStore() {
       await loadChildren();
       return true;
     } catch (e) {
+      if (isVerificationRequiredApiError(e)) {
+        onVerificationRequired?.();
+        return false;
+      }
       console.log("[Kids] edit error", e);
       return false;
     } finally {
@@ -201,6 +214,10 @@ export function useManageChildStore() {
       await loadChildren();
       return true;
     } catch (e) {
+      if (isVerificationRequiredApiError(e)) {
+        onVerificationRequired?.();
+        return false;
+      }
       console.log("[Kids] delete error", e);
       return false;
     } finally {
@@ -225,4 +242,3 @@ export function useManageChildStore() {
 export default function RouteShim() {
   return null as any;
 }
-

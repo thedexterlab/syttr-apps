@@ -219,7 +219,7 @@ class SyttrProfileController extends Controller
                     'experience_years' => $profile->experience_years,
                     'hourly_rate' => $profile->hourly_rate !== null ? (float) $profile->hourly_rate : null,
                     'bio' => $profile->bio,
-                    'profile_image' => $profile->user_image_url ?: $profile->user_image,
+                    'profile_image' => $profile->user_image_url,
                     'user_image' => $profile->user_image,
                     'user_image_url' => $profile->user_image_url,
                     'certificate' => $profile->certificate,

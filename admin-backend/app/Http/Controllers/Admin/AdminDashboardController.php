@@ -7,6 +7,8 @@ use App\Models\AppData\AppUser;
 use App\Models\AppData\ParentJob;
 use App\Support\AdminWithdrawalCommissionMetrics;
 use App\Support\AdminJobFormatter;
+use App\Support\AdminRemoteApiClient;
+use App\Support\AppDataApiClient;
 use App\Support\AppDataHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Collection;
@@ -15,21 +17,36 @@ class AdminDashboardController extends Controller
 {
     public function index(): JsonResponse
     {
+        if (! AppDataHelper::canReachAppDataDatabase()) {
+            $remote = AdminRemoteApiClient::get('/api/admin/dashboard-stats');
+            if (is_array($remote) && isset($remote['data'])) {
+                return response()->json([
+                    'data' => $remote['data'],
+                    'source' => 'remote_admin',
+                ]);
+            }
+
+            return response()->json([
+                'data' => $this->fallbackDashboardData(),
+                'source' => 'app_api',
+            ]);
+        }
+
         if (! AppDataHelper::hasTable('users') || ! AppDataHelper::hasTable('parent_jobs')) {
             return response()->json([
                 'data' => [
                     'active_nannies' => 0,
                     'live_bookings' => 0,
-                'active_users' => 0,
-                'recent_bookings' => [],
-                'city_utilization' => [],
-                'commission_revenue' => 0,
-                'commission_revenue_period_label' => now()->format('M Y'),
-                'commission_revenue_current_period' => 0,
-                'withdrawal_count' => 0,
-            ],
-        ]);
-    }
+                    'active_users' => 0,
+                    'recent_bookings' => [],
+                    'city_utilization' => [],
+                    'commission_revenue' => 0,
+                    'commission_revenue_period_label' => now()->format('M Y'),
+                    'commission_revenue_current_period' => 0,
+                    'withdrawal_count' => 0,
+                ],
+            ]);
+        }
 
         $activeNannies = AppUser::query()
             ->syttrs()
@@ -78,6 +95,28 @@ class AdminDashboardController extends Controller
                 'withdrawal_count' => $withdrawalCommissionSummary['withdrawal_count'] ?? 0,
             ],
         ]);
+    }
+
+    private function fallbackDashboardData(): array
+    {
+        $nannies = AppDataApiClient::nannies();
+        $parents = AppDataApiClient::parents();
+        $jobs = collect(AppDataApiClient::jobs());
+        $liveStatuses = ['accepted', 'active', 'confirmed', 'booked', 'in_progress'];
+
+        return [
+            'active_nannies' => $nannies['total'],
+            'live_bookings' => $jobs
+                ->filter(fn (array $job): bool => in_array(strtolower((string) ($job['status'] ?? '')), $liveStatuses, true))
+                ->count(),
+            'active_users' => count($parents),
+            'recent_bookings' => $jobs->take(12)->values()->all(),
+            'city_utilization' => $this->buildCityUtilization($jobs->take(12)->values()),
+            'commission_revenue' => 0,
+            'commission_revenue_period_label' => now()->format('M Y'),
+            'commission_revenue_current_period' => 0,
+            'withdrawal_count' => 0,
+        ];
     }
 
     private function buildCityUtilization(Collection $recentBookings): array

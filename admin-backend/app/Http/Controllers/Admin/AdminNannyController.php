@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\AppData\AppUser;
 use App\Models\AppData\ParentJobApplication;
 use App\Models\AppData\SyttrInterview;
+use App\Support\AdminRemoteApiClient;
+use App\Support\AppDataApiClient;
 use App\Support\AppDataHelper;
 use App\Support\AdminAuditLogger;
 use App\Support\AdminBlacklistEnforcer;
@@ -13,12 +15,28 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 
 class AdminNannyController extends Controller
 {
     public function index(): JsonResponse
     {
+        if (! AppDataHelper::canReachAppDataDatabase()) {
+            $remote = AdminRemoteApiClient::get('/api/admin/nannies');
+            if (is_array($remote) && isset($remote['data'])) {
+                return response()->json([
+                    'data' => $remote['data'],
+                    'source' => 'remote_admin',
+                ]);
+            }
+
+            return response()->json([
+                'data' => $this->fallbackNannies(),
+                'source' => 'app_api',
+            ]);
+        }
+
         if (! AppDataHelper::hasTable('users')) {
             return response()->json([
                 'data' => [],
@@ -91,12 +109,84 @@ class AdminNannyController extends Controller
         ]);
     }
 
+    private function fallbackNannies(): array
+    {
+        return collect(AppDataApiClient::nannies()['rows'])
+            ->map(function (array $row, int $index): array {
+                $publicId = (string) ($row['nanny_id'] ?? $row['user_id'] ?? $row['id'] ?? $index + 1);
+                $rating = $row['avg_rating'] ?? $row['rating'] ?? 0;
+
+                return [
+                    'id' => $publicId,
+                    'user_id' => $publicId,
+                    'name' => $row['fullname'] ?? $row['name'] ?? '-',
+                    'email' => $row['email'] ?? '-',
+                    'status' => $this->fallbackNannyStatus($row['verification_status'] ?? null),
+                    'profile_status' => $row['verification_status'] ?? null,
+                    'phone' => $row['phone'] ?? null,
+                    'city' => $row['city'] ?? null,
+                    'country' => $row['country'] ?? null,
+                    'gender' => $row['gender'] ?? null,
+                    'date_of_birth' => null,
+                    'age' => null,
+                    'experience' => $row['experience_years'] ?? $row['experience'] ?? null,
+                    'bio' => $row['bio'] ?? null,
+                    'rating' => $rating,
+                    'avg_rating' => $rating,
+                    'average_rating' => $rating,
+                    'ratings_count' => $row['ratings_count'] ?? 0,
+                    'review_count' => $row['ratings_count'] ?? 0,
+                    'total_reviews' => $row['ratings_count'] ?? 0,
+                    'total_jobs' => $row['total_jobs'] ?? $row['jobs_count'] ?? 0,
+                    'shifts' => $row['total_jobs'] ?? $row['jobs_count'] ?? 0,
+                    'profile_image' => $row['user_image'] ?? null,
+                    'profile_image_url' => $row['user_image_url'] ?? $row['profile_image'] ?? null,
+                    'certificate' => $row['certificate'] ?? null,
+                    'certificate_url' => $row['certificate_url'] ?? null,
+                    'resume' => null,
+                    'resume_url' => null,
+                    'created_at' => null,
+                    'updated_at' => null,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    private function fallbackNannyStatus(mixed $value): string
+    {
+        $raw = strtolower(trim((string) ($value ?? '')));
+        if ($raw === '') {
+            return 'Pending';
+        }
+
+        if (str_contains($raw, 'blacklist') || str_contains($raw, 'reject')) {
+            return 'Blacklisted';
+        }
+
+        if (
+            str_contains($raw, 'verified') ||
+            str_contains($raw, 'approv') ||
+            str_contains($raw, 'active') ||
+            str_contains($raw, 'complete') ||
+            str_contains($raw, 'clear')
+        ) {
+            return 'Approved';
+        }
+
+        return 'Pending';
+    }
+
     public function updateProfileStatus(Request $request): JsonResponse
     {
         $data = $request->validate([
             'nanny_id' => ['required'],
             'status' => ['required', 'string'],
         ]);
+
+        if (! AppDataHelper::canReachAppDataDatabase()) {
+            return $this->forwardProfileStatusUpdateToRemoteAdmin($data);
+        }
 
         $user = AppUser::resolveByIdentifier($data['nanny_id']);
         if (! $user || $user->role !== 'syttr') {
@@ -155,6 +245,67 @@ class AdminNannyController extends Controller
                 'status' => AppDataHelper::nannyStatusLabel($freshUser),
             ],
         ]);
+    }
+
+    private function forwardProfileStatusUpdateToRemoteAdmin(array $data): JsonResponse
+    {
+        $baseUrl = rtrim((string) config('admin.remote_base_url'), '/');
+        $apiKey = trim((string) config('admin.remote_api_key'));
+        $email = trim((string) config('admin.remote_email'));
+        $password = (string) config('admin.remote_password');
+
+        if ($baseUrl === '' || $apiKey === '' || $email === '' || $password === '') {
+            return response()->json([
+                'message' => 'Remote admin status update is not configured.',
+            ], 503);
+        }
+
+        try {
+            $headers = [
+                (string) config('admin.api_key_header', 'X-ADMIN-API-KEY') => $apiKey,
+                'Accept' => 'application/json',
+            ];
+
+            $login = Http::timeout(15)
+                ->withHeaders($headers)
+                ->post($baseUrl.'/api/admin/login', [
+                    'email' => $email,
+                    'password' => $password,
+                    'remember' => true,
+                ]);
+
+            if (! $login->successful()) {
+                return response()->json([
+                    'message' => 'Remote admin login failed.',
+                    'details' => $login->json('message') ?: $login->body(),
+                ], 502);
+            }
+
+            $token = trim((string) $login->json('token'));
+            if ($token === '') {
+                return response()->json([
+                    'message' => 'Remote admin login did not return a token.',
+                ], 502);
+            }
+
+            $response = Http::timeout(20)
+                ->withHeaders($headers)
+                ->withToken($token)
+                ->post($baseUrl.'/api/admin/nanny/profile-status', [
+                    'nanny_id' => $data['nanny_id'],
+                    'status' => $data['status'],
+                ]);
+
+            return response()->json(
+                $response->json() ?: ['message' => $response->body()],
+                $response->status()
+            );
+        } catch (\Throwable $exception) {
+            return response()->json([
+                'message' => 'Remote admin status update failed.',
+                'details' => $exception->getMessage(),
+            ], 502);
+        }
     }
 
     private function jobCountByNanny(): Collection

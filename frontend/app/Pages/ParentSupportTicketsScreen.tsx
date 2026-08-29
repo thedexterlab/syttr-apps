@@ -13,13 +13,14 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { apiRequest, getRuntimeApiKey, sanitizeToken } from "../Api";
+import { apiRequest, getRuntimeApiKey, isVerificationRequiredApiError, sanitizeToken } from "../Api";
 import { rf, rs } from "../utils/responsive";
 
 type Props = {
   navigation?: any;
   onBack?: () => void;
   onCreateTicket?: () => void;
+  onRequireVerification?: () => void;
 };
 
 type SupportTicket = {
@@ -71,6 +72,7 @@ export default function ParentSupportTicketsScreen({
   navigation,
   onBack,
   onCreateTicket,
+  onRequireVerification,
 }: Props) {
   const [items, setItems] = useState<SupportTicket[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,11 +113,21 @@ export default function ParentSupportTicketsScreen({
         },
       });
       if (payload?.success === false) {
+        if (isVerificationRequiredApiError({ payload, message: payload?.message })) {
+          onRequireVerification?.();
+          return;
+        }
         throw new Error(payload?.message || "Unable to load support tickets.");
       }
 
       setItems(Array.isArray(payload?.data) ? payload.data : []);
     } catch (e: any) {
+      if (isVerificationRequiredApiError(e)) {
+        setItems([]);
+        setError("");
+        onRequireVerification?.();
+        return;
+      }
       setItems([]);
       setError(e?.message || "Unable to load support tickets.");
     } finally {

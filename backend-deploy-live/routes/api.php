@@ -34,6 +34,15 @@ use App\Http\Controllers\WalletController;
 use App\Http\Middleware\EnsureAdminApiToken;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/', function () {
+    return response()->json([
+        'ok' => true,
+        'app' => config('app.name'),
+        'health_url' => url('/api/health'),
+        'time' => now()->toIso8601String(),
+    ]);
+});
+
 Route::get('/health', function () {
     return response()->json([
         'ok' => true,

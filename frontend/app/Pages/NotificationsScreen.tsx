@@ -70,7 +70,7 @@ const isNotificationRead = (
 
 const isChatMessageType = (type: any) => {
   const value = String(type || "").trim().toLowerCase();
-  return value === "chat_message" || value === "chat";
+  return value === "chat_message" || value === "chat" || value === "new_message";
 };
 
 const isJobRequestNotification = (item?: NotificationItem | null) => {
@@ -92,7 +92,7 @@ const isJobRequestNotification = (item?: NotificationItem | null) => {
 const isRateSitterPromptNotification = (item?: NotificationItem | null) => {
   if (!item) return false;
   const type = String(item.type || "").trim().toLowerCase();
-  if (type === "rate_sitter_prompt" || type === "rate-sitter-prompt") return true;
+  if (type) return type === "rate_sitter_prompt" || type === "rate-sitter-prompt";
   const haystack = `${item.title || ""} ${item.subtitle || ""} ${item.message || ""}`.toLowerCase();
   return haystack.includes("rate syttr") || haystack.includes("rate sitter");
 };
@@ -305,6 +305,34 @@ type Props = {
   onCalendar?: () => void;
   onSettings?: () => void;
   onNotifications?: () => void;
+  onRequireVerification?: () => void;
+  initialRatingNotification?: NotificationItem | null;
+};
+
+const isVerificationRequiredError = (error: any) => {
+  const message = String(
+    error?.message ||
+      error?.payload?.message ||
+      error?.response?.data?.message ||
+      ""
+  ).toLowerCase();
+  const code = String(
+    error?.code ||
+      error?.payload?.code ||
+      error?.response?.data?.code ||
+      ""
+  ).toLowerCase();
+
+  return (
+    code.includes("verification_required") ||
+    message.includes("verification is required before accessing") ||
+    message.includes("verification required") ||
+    (
+      message.includes("payment") &&
+      message.includes("background check") &&
+      message.includes("admin approval")
+    )
+  );
 };
 
 
@@ -320,6 +348,8 @@ export default function NotificationsScreen({
   onCalendar,
   onSettings,
   onNotifications,
+  onRequireVerification,
+  initialRatingNotification,
 }: Props) {
   const insets = useSafeAreaInsets();
   const bottomBarOffset = -Math.max(insets.bottom, 0);
@@ -587,7 +617,6 @@ export default function NotificationsScreen({
         .filter(Boolean) as NotificationItem[];
 
       const filtered = normalized.filter((n) => {
-        if (isChatMessageType(n.type)) return false;
         if (isJobRequestNotification(n)) return false;
         if (isLikelyNannyFacing(n)) return false;
         return true;
@@ -603,6 +632,11 @@ export default function NotificationsScreen({
       });
       setItems(visible);
     } catch (e) {
+      if (isVerificationRequiredError(e)) {
+        setItems([]);
+        onRequireVerification?.();
+        return;
+      }
       console.log("Notification fetch error:", e);
       if (!silent) {
         Alert.alert("Error", "Unable to load notifications");
@@ -805,6 +839,12 @@ export default function NotificationsScreen({
     setRatingModalVisible(true);
   };
 
+  useEffect(() => {
+    if (isRateSitterPromptNotification(initialRatingNotification)) {
+      openRateSyttrModal(initialRatingNotification as NotificationItem);
+    }
+  }, [initialRatingNotification]);
+
   const closeRateSyttrModal = () => {
     if (ratingSubmitting) return;
     setRatingModalVisible(false);
@@ -916,7 +956,7 @@ export default function NotificationsScreen({
       payload.application ||
       data.job_application ||
       payload.job_application;
-    const type = String(data.type || payload.type || "").trim();
+    const type = String(data.type || payload.type || data.event || payload.event || "").trim();
     const isChatMessage = isChatMessageType(type);
     const status =
       data.status ||
@@ -932,9 +972,11 @@ export default function NotificationsScreen({
       payload.job_application_id;
     const jobId =
       data.job_id ||
+      data.booking_id ||
       data.job?.id ||
       data.job?.job_id ||
       payload.job_id ||
+      payload.booking_id ||
       payload.job?.id ||
       payload.job?.job_id;
     const names = extractNotificationNames(payload);

@@ -680,11 +680,6 @@ function Dashboard() {
       .slice(0, 5)
   }, [filteredBookings])
 
-  const topNanniesMax = useMemo(() => {
-    if (!topNannies.length) return 1
-    return Math.max(...topNannies.map((item) => item.appointments || 0), 1)
-  }, [topNannies])
-
   const stats = useMemo(
     () => [
       {

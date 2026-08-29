@@ -21,7 +21,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { apiRequest, BASE_URL, getRuntimeApiKey, sanitizeToken, updateNannyProfile } from "../Api";
+import { apiRequest, BASE_URL, getRuntimeApiKey, isVerificationRequiredApiError, sanitizeToken, updateNannyProfile } from "../Api";
 import SafeScreen from "../components/SafeScreen";
 import { Location } from "../utils/safeLocation";
 import { hp, rf, rs, wp } from "../utils/responsive";
@@ -53,6 +53,7 @@ type Props = {
   navigation?: any;
   onBack?: () => void;
   onEdit?: () => void;
+  onRequireVerification?: () => void;
 };
 
 const NANNY_PRIMARY_KEYS = {
@@ -174,7 +175,7 @@ const isImageAsset = (value?: string | null) => {
   );
 };
 
-const NannyProfileViewScreen: React.FC<Props> = ({ navigation, onBack, onEdit }) => {
+const NannyProfileViewScreen: React.FC<Props> = ({ navigation, onBack, onEdit, onRequireVerification }) => {
   const [profile, setProfile] = useState<NannyProfile | null>(null);
   const [loading, setLoading] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -675,6 +676,10 @@ const NannyProfileViewScreen: React.FC<Props> = ({ navigation, onBack, onEdit })
       setCertificateFile(null);
       setCertificateLabel(inferCertificateLabel(certificateFromApi));
     } catch (err: any) {
+      if (isVerificationRequiredApiError(err)) {
+        onRequireVerification?.();
+        return;
+      }
       Alert.alert("Oops", err?.message || "Could not save your profile. Please try again.");
     } finally {
       setSaving(false);
@@ -725,7 +730,12 @@ const NannyProfileViewScreen: React.FC<Props> = ({ navigation, onBack, onEdit })
             ...(apiKey ? { "x-api-key": apiKey } : {}),
           },
           }
-        ).catch(() => null);
+        ).catch((error) => {
+          if (isVerificationRequiredApiError(error)) {
+            onRequireVerification?.();
+          }
+          return null;
+        });
         if (detailsJson) {
           const detailMapped = mapApiProfile((detailsJson as any)?.data || detailsJson);
           mapped = { ...detailMapped, ...mapped };
@@ -801,6 +811,10 @@ const NannyProfileViewScreen: React.FC<Props> = ({ navigation, onBack, onEdit })
         setDob(dobStr);
       }
     } catch (e: any) {
+      if (isVerificationRequiredApiError(e)) {
+        onRequireVerification?.();
+        return;
+      }
       Alert.alert("Profile", e?.message || "Unable to load profile.");
     } finally {
       setLoading(false);

@@ -18,7 +18,7 @@ import { rf, rs } from "../utils/responsive";
 import { formatDateToMDY } from "../utils/dateFormat";
 import { MapView, Marker, PROVIDER_GOOGLE } from "../../lib/WebSafeMap";
 import { geocodeAddress } from "../utils/geocodeAddress";
-import { apiRequest, getRuntimeApiKey, sanitizeToken } from "../Api";
+import { apiRequest, getRuntimeApiKey, isVerificationRequiredApiError, sanitizeToken } from "../Api";
 
 /* ---------------- TYPES ---------------- */
 
@@ -79,6 +79,7 @@ type Props = {
   route?: RouteProp<RouteParams, "params"> | { params?: { item?: NotificationItem } };
   navigation?: any;
   onBack?: () => void;
+  onRequireVerification?: () => void;
 };
 
 const formatDateTime = (value?: string) => {
@@ -341,7 +342,7 @@ const getExtraHoursRequestMeta = (item?: NotificationItem) => {
 
 /* ---------------- SCREEN ---------------- */
 
-export default function NotificationDetailScreen({ route, navigation, onBack }: Props) {
+export default function NotificationDetailScreen({ route, navigation, onBack, onRequireVerification }: Props) {
   const nav = navigation;
   const params = route?.params ?? {};
   const initialItem: NotificationItem = params.item ?? {};
@@ -412,7 +413,12 @@ export default function NotificationDetailScreen({ route, navigation, onBack }: 
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
             ...(apiKey ? { "x-api-key": apiKey } : {}),
           },
-        }).catch(() => null);
+        }).catch((error) => {
+          if (isVerificationRequiredApiError(error)) {
+            onRequireVerification?.();
+          }
+          return null;
+        });
         if (!json) return;
 
         const data = json?.data || {};
@@ -454,7 +460,11 @@ export default function NotificationDetailScreen({ route, navigation, onBack }: 
           application: fetchedApplication || undefined,
           nanny: fetchedNanny || undefined,
         });
-      } catch {
+      } catch (error: any) {
+        if (isVerificationRequiredApiError(error)) {
+          onRequireVerification?.();
+          return;
+        }
         // keep local payload fallback
       } finally {
         if (!canceled) setDetailLoading(false);
@@ -464,7 +474,7 @@ export default function NotificationDetailScreen({ route, navigation, onBack }: 
     return () => {
       canceled = true;
     };
-  }, [detailSeed.jobId, detailSeed.applicationId]);
+  }, [detailSeed.jobId, detailSeed.applicationId, onRequireVerification]);
 
   const normalizedTitle = normalizeParentText(item.title || "Notification");
   const isChatMessageNotification = isChatMessageType(item.type);
@@ -766,11 +776,19 @@ export default function NotificationDetailScreen({ route, navigation, onBack }: 
           : undefined,
       });
       if (json?.success === false) {
+        if (isVerificationRequiredApiError({ payload: json, message: json?.message })) {
+          onRequireVerification?.();
+          return;
+        }
         throw new Error(json?.message || "Unable to mark notification as read.");
       }
 
       setItem((prev) => ({ ...prev, is_read: 1, isRead: true }));
     } catch (e) {
+      if (isVerificationRequiredApiError(e)) {
+        onRequireVerification?.();
+        return;
+      }
       console.log("[NotificationDetail] mark read error", e);
       Alert.alert("Error", "Unable to mark as read.");
     } finally {
@@ -814,6 +832,11 @@ export default function NotificationDetailScreen({ route, navigation, onBack }: 
       }
     );
     if (json?.success === false) {
+      if (isVerificationRequiredApiError({ payload: json, message: json?.message })) {
+        const error = new Error(json?.message || "Verification required.");
+        (error as any).payload = json;
+        throw error;
+      }
       throw new Error(json?.message || "Unable to update request.");
     }
     return json;
@@ -862,6 +885,11 @@ export default function NotificationDetailScreen({ route, navigation, onBack }: 
       }
     );
     if (json?.success === false) {
+      if (isVerificationRequiredApiError({ payload: json, message: json?.message })) {
+        const error = new Error(json?.message || "Verification required.");
+        (error as any).payload = json;
+        throw error;
+      }
       throw new Error(json?.message || "Unable to update hire request.");
     }
     return json;
@@ -904,6 +932,11 @@ export default function NotificationDetailScreen({ route, navigation, onBack }: 
       }
     );
     if (json?.success === false) {
+      if (isVerificationRequiredApiError({ payload: json, message: json?.message })) {
+        const error = new Error(json?.message || "Verification required.");
+        (error as any).payload = json;
+        throw error;
+      }
       throw new Error(json?.message || "Unable to update extra hours request.");
     }
     return json;
@@ -978,6 +1011,10 @@ export default function NotificationDetailScreen({ route, navigation, onBack }: 
           : "You declined a job request from a Syttr."
       );
     } catch (e: any) {
+      if (isVerificationRequiredApiError(e)) {
+        onRequireVerification?.();
+        return;
+      }
       console.log("[NotificationDetail] decision error", e);
       Alert.alert("Error", e?.message || "Unable to update request.");
     } finally {

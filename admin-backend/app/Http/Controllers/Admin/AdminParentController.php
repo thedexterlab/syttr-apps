@@ -6,16 +6,34 @@ use App\Http\Controllers\Controller;
 use App\Models\AppData\AppUser;
 use App\Models\AppData\ParentJob;
 use App\Models\AppData\ParentKid;
+use App\Support\AdminRemoteApiClient;
+use App\Support\AppDataApiClient;
 use App\Support\AppDataHelper;
 use App\Support\AdminAuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Http;
 
 class AdminParentController extends Controller
 {
     public function index(): JsonResponse
     {
+        if (! AppDataHelper::canReachAppDataDatabase()) {
+            $remote = AdminRemoteApiClient::get('/api/admin/users');
+            if (is_array($remote) && isset($remote['data'])) {
+                return response()->json([
+                    'data' => $remote['data'],
+                    'source' => 'remote_admin',
+                ]);
+            }
+
+            return response()->json([
+                'data' => $this->fallbackParents(),
+                'source' => 'app_api',
+            ]);
+        }
+
         if (! AppDataHelper::hasTable('users')) {
             return response()->json([
                 'data' => [],
@@ -64,12 +82,91 @@ class AdminParentController extends Controller
         ]);
     }
 
+    private function fallbackParents(): array
+    {
+        return collect(AppDataApiClient::parents())
+            ->map(function (array $profile, int $index): array {
+                $user = is_array($profile['user'] ?? null) ? $profile['user'] : [];
+                $publicId = (string) ($user['user_id'] ?? $profile['user_id'] ?? $profile['id'] ?? $index + 1);
+
+                return [
+                    'id' => $publicId,
+                    'user_id' => $publicId,
+                    'name' => $user['name'] ?? $profile['name'] ?? '-',
+                    'email' => $user['email'] ?? $profile['email'] ?? '-',
+                    'status' => $this->fallbackParentStatus(
+                        $user['profile_status'] ?? $profile['profile_status'] ?? null,
+                        (bool) ($user['is_blacklisted'] ?? false),
+                        $user['deactivated_at'] ?? null,
+                    ),
+                    'phone' => $profile['phone'] ?? null,
+                    'city' => $profile['city'] ?? null,
+                    'country' => $profile['country'] ?? null,
+                    'gender' => $profile['gender'] ?? null,
+                    'about_me' => $profile['bio'] ?? null,
+                    'number_of_kids' => $profile['children_count'] ?? 0,
+                    'kids_count' => $profile['children_count'] ?? 0,
+                    'bookings' => $user['jobs_posted_count'] ?? $profile['jobs_posted_count'] ?? 0,
+                    'total_jobs' => $user['jobs_posted_count'] ?? $profile['jobs_posted_count'] ?? 0,
+                    'profile_image' => $profile['user_image'] ?? null,
+                    'profile_image_url' => $profile['user_image_url'] ?? null,
+                    'kid_id' => null,
+                    'kid_name' => null,
+                    'kid_age' => null,
+                    'kid_gender' => null,
+                    'allergies' => null,
+                    'medical_conditions' => null,
+                    'notes' => null,
+                    'created_at' => $user['created_at'] ?? $profile['created_at'] ?? null,
+                    'updated_at' => $user['updated_at'] ?? $profile['updated_at'] ?? null,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    private function fallbackParentStatus(mixed $value, bool $isBlacklisted, mixed $deactivatedAt): string
+    {
+        if ($deactivatedAt) {
+            return 'Deactivated';
+        }
+
+        if ($isBlacklisted) {
+            return 'Blacklisted';
+        }
+
+        $raw = strtolower(trim((string) ($value ?? '')));
+        if ($raw === '') {
+            return 'Unverified';
+        }
+
+        if (
+            str_contains($raw, 'verified') ||
+            str_contains($raw, 'approv') ||
+            str_contains($raw, 'active') ||
+            str_contains($raw, 'complete') ||
+            str_contains($raw, 'clear')
+        ) {
+            return 'Verified';
+        }
+
+        if (str_contains($raw, 'blacklist') || str_contains($raw, 'reject')) {
+            return 'Blacklisted';
+        }
+
+        return 'Unverified';
+    }
+
     public function updateProfileStatus(Request $request): JsonResponse
     {
         $data = $request->validate([
             'user_id' => ['required'],
             'status' => ['required', 'string'],
         ]);
+
+        if (! AppDataHelper::canReachAppDataDatabase()) {
+            return $this->forwardProfileStatusUpdateToRemoteAdmin($data);
+        }
 
         $user = AppUser::resolveByIdentifier($data['user_id']);
         if (! $user || $user->role !== 'parent') {
@@ -116,6 +213,67 @@ class AdminParentController extends Controller
                 'status' => AppDataHelper::parentStatusLabel($freshUser),
             ],
         ]);
+    }
+
+    private function forwardProfileStatusUpdateToRemoteAdmin(array $data): JsonResponse
+    {
+        $baseUrl = rtrim((string) config('admin.remote_base_url'), '/');
+        $apiKey = trim((string) config('admin.remote_api_key'));
+        $email = trim((string) config('admin.remote_email'));
+        $password = (string) config('admin.remote_password');
+
+        if ($baseUrl === '' || $apiKey === '' || $email === '' || $password === '') {
+            return response()->json([
+                'message' => 'Remote admin status update is not configured.',
+            ], 503);
+        }
+
+        try {
+            $headers = [
+                (string) config('admin.api_key_header', 'X-ADMIN-API-KEY') => $apiKey,
+                'Accept' => 'application/json',
+            ];
+
+            $login = Http::timeout(15)
+                ->withHeaders($headers)
+                ->post($baseUrl.'/api/admin/login', [
+                    'email' => $email,
+                    'password' => $password,
+                    'remember' => true,
+                ]);
+
+            if (! $login->successful()) {
+                return response()->json([
+                    'message' => 'Remote admin login failed.',
+                    'details' => $login->json('message') ?: $login->body(),
+                ], 502);
+            }
+
+            $token = trim((string) $login->json('token'));
+            if ($token === '') {
+                return response()->json([
+                    'message' => 'Remote admin login did not return a token.',
+                ], 502);
+            }
+
+            $response = Http::timeout(20)
+                ->withHeaders($headers)
+                ->withToken($token)
+                ->post($baseUrl.'/api/admin/parents/profile-status', [
+                    'user_id' => $data['user_id'],
+                    'status' => $data['status'],
+                ]);
+
+            return response()->json(
+                $response->json() ?: ['message' => $response->body()],
+                $response->status()
+            );
+        } catch (\Throwable $exception) {
+            return response()->json([
+                'message' => 'Remote admin status update failed.',
+                'details' => $exception->getMessage(),
+            ], 502);
+        }
     }
 
     private function serializeParentRow(AppUser $user, ?ParentKid $kid, int $kidsCount, int $jobCount): array

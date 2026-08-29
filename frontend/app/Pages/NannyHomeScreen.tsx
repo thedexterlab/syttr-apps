@@ -82,9 +82,11 @@ type Props = {
   onWithdraw?: () => void;
   onJobPress?: (job: JobSummary) => void;
   onOpenBooking?: (event: any, date?: string) => void;
+  onRequireVerification?: () => void;
   onRejected?: () => void;
 };
 const WEEK_DAYS_MON_TO_SUN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+const DEFAULT_EARNINGS_TIME_ZONE = "America/Chicago";
 const STORAGE_ROOT = BASE_URL.replace(/\/api\/?$/, "");
 const ASSET_CACHE_BUST = "asset_v=20260327_1";
 
@@ -246,6 +248,55 @@ const getWeekStartMonday = (date = new Date()) => {
   return base;
 };
 
+const getDateKeyInTimeZone = (
+  value: any,
+  timeZone = DEFAULT_EARNINGS_TIME_ZONE
+): string | null => {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnly) return `${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}`;
+
+  const parsed = new Date(raw);
+  if (!Number.isFinite(parsed.getTime())) return null;
+
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(parsed);
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    if (values.year && values.month && values.day) {
+      return `${values.year}-${values.month}-${values.day}`;
+    }
+  } catch {
+    // Fall back to the device calendar if the runtime lacks timezone support.
+  }
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const getCentralWeekDateKeys = (now = new Date()): string[] => {
+  const todayKey = getDateKeyInTimeZone(now, DEFAULT_EARNINGS_TIME_ZONE);
+  if (!todayKey) return [];
+
+  const today = new Date(`${todayKey}T00:00:00Z`);
+  const mondayOffset = (today.getUTCDay() + 6) % 7;
+  today.setUTCDate(today.getUTCDate() - mondayOffset);
+
+  return WEEK_DAYS_MON_TO_SUN.map((_, index) => {
+    const date = new Date(today);
+    date.setUTCDate(date.getUTCDate() + index);
+    return date.toISOString().slice(0, 10);
+  });
+};
+
 const getTransactionsArrayFromPayload = (payload: any): any[] => {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.data)) return payload.data;
@@ -299,6 +350,32 @@ const resolveDashboardAvatarCandidate = (...values: any[]): string => {
   return "";
 };
 
+const isVerificationRequiredError = (error: any) => {
+  const message = String(
+    error?.message ||
+      error?.payload?.message ||
+      error?.response?.data?.message ||
+      ""
+  ).toLowerCase();
+  const code = String(
+    error?.code ||
+      error?.payload?.code ||
+      error?.response?.data?.code ||
+      ""
+  ).toLowerCase();
+
+  return (
+    code.includes("verification_required") ||
+    message.includes("verification is required before accessing") ||
+    message.includes("verification required") ||
+    (
+      message.includes("payment") &&
+      message.includes("background check") &&
+      message.includes("admin approval")
+    )
+  );
+};
+
 export default function NannyHomeScreen({
   navigation,
   onAvailability,
@@ -312,6 +389,7 @@ export default function NannyHomeScreen({
   rateCards,
   onJobPress,
   onOpenBooking,
+  onRequireVerification,
   onRejected,
 }: Props) {
   const insets = useSafeAreaInsets();
@@ -356,6 +434,38 @@ export default function NannyHomeScreen({
     return earningsByDay.reduce((sum, e) => sum + (Number.isFinite(e.amount) ? e.amount : 0), 0);
   }, [earningsByDay]);
   const maxBarHeight = isSmallPhone ? 108 : 140;
+
+  const routeToVerificationIfRequired = (error: any) => {
+    if (!isVerificationRequiredError(error)) return false;
+    setNotificationCount(0);
+    setHireRequests([]);
+    setActiveJobsCount(0);
+    setBookingJobs([]);
+    setUpcomingShifts([]);
+    setNextBooking(null);
+    setAverageRating(null);
+    setEarningsByDay(createEmptyWeekEarnings());
+    if (onRequireVerification) {
+      onRequireVerification();
+    } else {
+      navigation?.navigate?.("GetVerified");
+    }
+    return true;
+  };
+
+  const handleWithdrawPress = async () => {
+    if (actionLoading) return;
+    setActionLoading("withdraw");
+    try {
+      if (onWithdraw) {
+        await onWithdraw();
+        return;
+      }
+      navigation?.navigate?.("Withdraw");
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   const today = useMemo(
     () =>
@@ -906,6 +1016,7 @@ export default function NannyHomeScreen({
         setShowRateModal(true);
       }
     } catch (e) {
+      if (routeToVerificationIfRequired(e)) return;
       if (!hadLocalRate) {
         setRequireHourlyRate(true);
         setShowRateModal(true);
@@ -987,6 +1098,7 @@ export default function NannyHomeScreen({
         );
       }
     } catch (e) {
+      if (routeToVerificationIfRequired(e)) return;
       const message = String((e as any)?.message || e || "");
       const isNetworkError = /network request failed|timed out/i.test(message);
       const now = Date.now();
@@ -1098,6 +1210,12 @@ export default function NannyHomeScreen({
 
       setHireRequests(mapped);
     } catch (e) {
+      if (routeToVerificationIfRequired(e)) {
+        if (!silent) {
+          setHireRequests([]);
+        }
+        return;
+      }
       const message = String((e as any)?.message || e || "");
       const isNetworkError = /network request failed|timed out/i.test(message);
       const now = Date.now();
@@ -1339,6 +1457,7 @@ export default function NannyHomeScreen({
       setBookingJobs(normalizedPendingJobs);
       setNextBooking(normalizedPendingJobs[0] || null);
     } catch (e) {
+      if (routeToVerificationIfRequired(e)) return;
       console.warn("fetchNextBooking failed", e);
       setActiveJobsCount(0);
       setBookingJobs([]);
@@ -1372,6 +1491,7 @@ export default function NannyHomeScreen({
         parseNumber(summary?.data?.rating);
       setAverageRating(avg);
     } catch (e) {
+      if (routeToVerificationIfRequired(e)) return;
       const status = Number((e as any)?.status || 0);
       const message = String((e as any)?.message || "").toLowerCase();
       const isExpectedUnavailable =
@@ -1440,15 +1560,15 @@ export default function NannyHomeScreen({
         }
       }
 
-      const weekStart = getWeekStartMonday(new Date());
-      const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekEnd.getDate() + 7);
-
+      const weekDateKeys = getCentralWeekDateKeys(new Date());
+      const weekDateIndex = new Map(weekDateKeys.map((key, index) => [key, index]));
       const totals = [0, 0, 0, 0, 0, 0, 0];
       transactions.forEach((tx: any) => {
         const amount =
+          parseMoneyAmount(tx?.earning_amount) ??
           parseMoneyAmount(tx?.net_amount) ??
           parseMoneyAmount(tx?.amount) ??
+          parseMoneyAmount(tx?.gross_amount) ??
           parseMoneyAmount(tx?.value) ??
           parseMoneyAmount(tx?.total) ??
           parseMoneyAmount(tx?.credit) ??
@@ -1457,6 +1577,14 @@ export default function NannyHomeScreen({
 
         const typeRaw = tx?.type || tx?.transaction_type || tx?.kind || tx?.category;
         if (isDebitLikeTransaction(typeRaw, tx?.direction)) return;
+        const normalizedType = String(typeRaw || "").trim().toLowerCase();
+        const normalizedCategory = String(tx?.category || "").trim().toLowerCase();
+        if (
+          normalizedType !== "job_payout" &&
+          !(normalizedCategory === "job" && String(tx?.direction || "").toLowerCase() === "credit")
+        ) {
+          return;
+        }
 
         const statusRaw = String(tx?.status || tx?.payment_status || tx?.state || "")
           .trim()
@@ -1468,14 +1596,22 @@ export default function NannyHomeScreen({
           return;
         }
 
-        const dateCandidate = tx?.created_at || tx?.paid_at || tx?.date || tx?.updated_at;
-        const when = parseLocalDateLike(dateCandidate);
-        if (!when) return;
+        const dateCandidate =
+          tx?.earning_date ||
+          tx?.job_start_date ||
+          tx?.meta?.start_date ||
+          tx?.paid_at ||
+          tx?.created_at ||
+          tx?.date ||
+          tx?.updated_at;
+        const earningDateKey = getDateKeyInTimeZone(
+          dateCandidate,
+          tx?.earning_timezone || tx?.meta?.timezone || DEFAULT_EARNINGS_TIME_ZONE
+        );
+        if (!earningDateKey) return;
 
-        const localDay = new Date(when.getFullYear(), when.getMonth(), when.getDate());
-        if (localDay < weekStart || localDay >= weekEnd) return;
-
-        const dayIndex = (localDay.getDay() + 6) % 7; // Monday=0 ... Sunday=6
+        const dayIndex = weekDateIndex.get(earningDateKey);
+        if (dayIndex === undefined) return;
         totals[dayIndex] += amount;
       });
 
@@ -1486,6 +1622,7 @@ export default function NannyHomeScreen({
         }))
       );
     } catch (e) {
+      if (routeToVerificationIfRequired(e)) return;
       console.warn("fetchWeeklyEarnings failed", e);
       setEarningsByDay(createEmptyWeekEarnings());
     }
@@ -1519,6 +1656,7 @@ export default function NannyHomeScreen({
         onRejected?.();
       }
     } catch (e) {
+      if (routeToVerificationIfRequired(e)) return;
       console.warn("checkProfileStatus failed", e);
     }
   };
@@ -1670,31 +1808,18 @@ export default function NannyHomeScreen({
                 )}
                 <Text style={styles.outlineBtnText}>Edit Availability</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.outlineBtn}
-                activeOpacity={0.9}
-                disabled={actionLoading !== null}
-                onPress={async () => {
-                  if (actionLoading) return;
-                  setActionLoading("withdraw");
-                  try {
-                    if (onWithdraw) {
-                      await onWithdraw();
-                      return;
-                    }
-                    navigation?.navigate?.("Withdraw");
-                  } finally {
-                    setActionLoading(null);
-                  }
-                }}
-              >
+              <Text style={styles.withdrawHelpText}>
+                Balance not showing up in bank account as expected?{" "}
                 {actionLoading === "withdraw" ? (
-                  <ActivityIndicator size="small" color="#C2185B" />
+                  <Text style={[styles.withdrawHelpLink, styles.withdrawHelpLinkDisabled]}>
+                    Withdraw manually now.
+                  </Text>
                 ) : (
-                  <Ionicons name="cash-outline" size={14} color="#C2185B" />
+                  <Text style={styles.withdrawHelpLink} onPress={handleWithdrawPress}>
+                    Withdraw manually now.
+                  </Text>
                 )}
-                <Text style={styles.outlineBtnText}>Withdraw</Text>
-              </TouchableOpacity>
+              </Text>
             </View>
           </View>
 
@@ -1864,7 +1989,7 @@ export default function NannyHomeScreen({
                             adjustsFontSizeToFit
                             minimumFontScale={0.45}
                           >
-                            {`$${Math.round(safeAmount)}`}
+                            {`$${safeAmount.toFixed(2)}`}
                           </Text>
                         </View>
                       </LinearGradient>
@@ -2194,6 +2319,22 @@ const styles = StyleSheet.create({
     gap: wp(1.5),
   },
   outlineBtnText: { color: "#C2185B", fontWeight: "700" },
+  withdrawHelpText: {
+    marginTop: hp(1.2),
+    fontSize: rf(14),
+    lineHeight: rf(20),
+    color: "#6B4350",
+    fontWeight: "600",
+  },
+  withdrawHelpLink: {
+    fontSize: rf(14),
+    color: "#C2185B",
+    fontWeight: "700",
+    textDecorationLine: "underline",
+  },
+  withdrawHelpLinkDisabled: {
+    opacity: 0.7,
+  },
 
   section: {
     backgroundColor: "#FFF1F6",

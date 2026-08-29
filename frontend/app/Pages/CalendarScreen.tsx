@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { apiRequest } from "../Api";
+import { apiRequest, isVerificationRequiredApiError } from "../Api";
 import { fetchUnreadParentRequestCount } from "../../lib/parentRequestNotifications";
 import { fetchUnreadConversationCount } from "../../lib/chatUnreadCount";
 import { hp, rf, rs, wp } from "../utils/responsive";
@@ -28,6 +28,7 @@ type Props = {
   onNotifications?: () => void;
   onSettings?: () => void;
   onOpenBooking?: (event: any, date: string) => void;
+  onRequireVerification?: () => void;
 };
 
 const formatKey = (date: Date) => {
@@ -296,6 +297,7 @@ export default function CalendarScreen({
   onNotifications,
   onSettings,
   onOpenBooking,
+  onRequireVerification,
 }: Props) {
   const insets = useSafeAreaInsets();
   const bottomBarOffset = -Math.max(insets.bottom, 0);
@@ -550,6 +552,11 @@ export default function CalendarScreen({
 
       setEventsByDay(grouped);
     } catch (e: any) {
+      if (isVerificationRequiredApiError(e)) {
+        setEventsByDay({});
+        onRequireVerification?.();
+        return;
+      }
       console.log("Calendar load error", e);
       setEventsByDay({});
       if (e?.message) {

@@ -17,7 +17,7 @@ import {
 } from "react-native";
 import { hp, rf, rs, wp } from "../utils/responsive";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { apiRequest, BASE_URL, getRuntimeApiKey, sanitizeToken } from "../Api";
+import { apiRequest, BASE_URL, isVerificationRequiredApiError, sanitizeToken } from "../Api";
 import NannyBottomNav from "../components/NannyBottomNav";
 import { subscribeToNotifications } from "../../lib/pusherClient";
 import { rewriteLoopbackAbsoluteUrl } from "../../lib/urlHosts";
@@ -98,6 +98,7 @@ type Props = {
   onMessages?: () => void;
   onNotifications?: () => void;
   onSettings?: () => void;
+  onRequireVerification?: () => void;
 };
 
 export default function NannyMessagesScreen({
@@ -111,6 +112,7 @@ export default function NannyMessagesScreen({
   onMessages,
   onNotifications,
   onSettings,
+  onRequireVerification,
 }: Props) {
   const insets = useSafeAreaInsets();
 
@@ -131,9 +133,8 @@ export default function NannyMessagesScreen({
   const loadThreads = useCallback(async () => {
     setLoading(true);
     try {
-      const [tokenRaw, apiKeyStored, storedNannyIdRaw, storedUserIdRaw] = await Promise.all([
+      const [tokenRaw, storedNannyIdRaw, storedUserIdRaw] = await Promise.all([
         AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("api_key"),
         AsyncStorage.getItem("nanny_id"),
         AsyncStorage.getItem("user_id"),
       ]);
@@ -208,13 +209,19 @@ export default function NannyMessagesScreen({
       setThreads(normalizedList);
       setFiltered(normalizedList);
     } catch (e) {
+      if (isVerificationRequiredApiError(e)) {
+        setThreads([]);
+        setFiltered([]);
+        onRequireVerification?.();
+        return;
+      }
       debug("[NannyMessages] threads load error", e);
       Alert.alert("Messages", "Unable to load conversations.");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [nannyId]);
+  }, [nannyId, onRequireVerification]);
 
   useEffect(() => {
     void loadThreads();

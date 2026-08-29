@@ -23,6 +23,8 @@ class NannyRatingController extends Controller
         }
 
         $hasParentRating = Schema::hasColumn('parent_job_applications', 'parent_rating');
+        $hasParentReview = Schema::hasColumn('parent_job_applications', 'parent_review');
+        $hasParentRatedAt = Schema::hasColumn('parent_job_applications', 'parent_rated_at');
         $hasNannyCanceledAt = Schema::hasColumn('parent_job_applications', 'nanny_canceled_at');
         $hasCanceledWithin24h = Schema::hasColumn('parent_job_applications', 'nanny_canceled_within_24h');
         $hasReliabilityPenalty = Schema::hasColumn('parent_job_applications', 'nanny_reliability_penalty');
@@ -60,6 +62,47 @@ class NannyRatingController extends Controller
         $reliabilityPenalty = $hasReliabilityPenalty
             ? (int) ((clone $allApps)->sum('nanny_reliability_penalty') ?: 0)
             : 0;
+        $reviews = [];
+
+        if ($hasParentRating) {
+            $reviewRows = ParentJobApplication::query()
+                ->join('parent_jobs', 'parent_jobs.id', '=', 'parent_job_applications.job_id')
+                ->leftJoin('users', 'users.user_id', '=', 'parent_jobs.user_id')
+                ->where('parent_job_applications.nanny_id', $nannyId)
+                ->whereNotNull('parent_job_applications.parent_rating')
+                ->when($hasParentReview, static function ($query) {
+                    $query->where(function ($inner) {
+                        $inner
+                            ->whereNotNull('parent_job_applications.parent_review')
+                            ->whereRaw('TRIM(parent_job_applications.parent_review) <> ""')
+                            ->orWhereNotNull('parent_job_applications.parent_rating');
+                    });
+                })
+                ->orderByDesc($hasParentRatedAt ? 'parent_job_applications.parent_rated_at' : 'parent_job_applications.updated_at')
+                ->limit(10)
+                ->get([
+                    'parent_job_applications.id',
+                    'parent_job_applications.parent_rating',
+                    'parent_job_applications.parent_review',
+                    'parent_job_applications.parent_rated_at',
+                    'parent_job_applications.updated_at',
+                    'users.name as parent_name',
+                ]);
+
+            $reviews = $reviewRows
+                ->map(static function ($row) use ($hasParentRatedAt) {
+                    $reviewText = trim((string) ($row->parent_review ?? ''));
+                    return [
+                        'id' => $row->id,
+                        'rating' => $row->parent_rating !== null ? (float) $row->parent_rating : null,
+                        'review' => $reviewText !== '' ? $reviewText : null,
+                        'parent_name' => trim((string) ($row->parent_name ?? '')) ?: 'Parent',
+                        'reviewed_at' => optional($hasParentRatedAt ? $row->parent_rated_at : $row->updated_at)->toISOString(),
+                    ];
+                })
+                ->values()
+                ->all();
+        }
 
         return response()->json([
             'success' => true,
@@ -74,6 +117,7 @@ class NannyRatingController extends Controller
                 'late_cancellations_within_24h' => $lateCancellations,
                 'reliability_penalty' => $reliabilityPenalty,
             ],
+            'reviews' => $reviews,
             'data' => [
                 'average_rating' => $average,
                 'ratings_count' => $ratingsCount,
@@ -86,6 +130,7 @@ class NannyRatingController extends Controller
                     'late_cancellations_within_24h' => $lateCancellations,
                     'reliability_penalty' => $reliabilityPenalty,
                 ],
+                'reviews' => $reviews,
             ],
         ]);
     }

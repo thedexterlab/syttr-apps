@@ -3,10 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\ParentProfile;
+use App\Models\ParentJob;
+use App\Models\ParentJobApplication;
 use App\Models\User;
 use App\Support\GhlContactManager;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -16,6 +19,7 @@ class ParentProfileController extends Controller
     {
         $userId = request()->query('user_id');
         $query = ParentProfile::query()
+            ->with('user')
             ->whereHas('user', fn ($builder) => $builder->visibleOnPlatform());
         if ($userId) {
             $resolvedUserId = User::resolvePublicUserIdByIdentifier($userId);
@@ -24,7 +28,7 @@ class ParentProfileController extends Controller
             }
             $query->where('user_id', $resolvedUserId);
         }
-        return $query->latest()->get();
+        return $query->latest()->get()->map(fn (ParentProfile $profile) => $this->transformProfile($profile));
     }
 
     public function store(Request $request)
@@ -98,7 +102,9 @@ class ParentProfileController extends Controller
 
     public function show(ParentProfile $parentProfile)
     {
-        return $parentProfile;
+        $parentProfile->loadMissing('user');
+
+        return $this->transformProfile($parentProfile);
     }
 
     public function update(Request $request, ParentProfile $parentProfile)
@@ -239,5 +245,111 @@ class ParentProfileController extends Controller
         }
 
         return $path;
+    }
+
+    private function transformProfile(ParentProfile $profile): array
+    {
+        $stats = $this->buildParentRatingStats($profile->user_id);
+        $reviews = $this->buildParentReviews($profile->user_id);
+        $user = $profile->user;
+
+        return [
+            ...$profile->toArray(),
+            'name' => $user?->name,
+            'email' => $user?->email,
+            'average_rating' => $stats['average_rating'],
+            'jobs_posted_count' => $stats['jobs_posted_count'],
+            'ratings_count' => $stats['raters_count'],
+            'total_ratings_count' => $stats['ratings_count'],
+            'reviews' => $reviews,
+        ];
+    }
+
+    private function buildParentRatingStats(?string $parentUserId): array
+    {
+        $publicId = strtoupper(trim((string) ($parentUserId ?? '')));
+        if ($publicId === '') {
+            return [
+                'average_rating' => null,
+                'jobs_posted_count' => 0,
+                'ratings_count' => 0,
+                'raters_count' => 0,
+            ];
+        }
+
+        $jobsPostedCount = (int) ParentJob::query()
+            ->where('user_id', $publicId)
+            ->count();
+
+        $ratingsBase = ParentJobApplication::query()
+            ->visibleOnPlatform()
+            ->join('parent_jobs', 'parent_jobs.id', '=', 'parent_job_applications.job_id')
+            ->where('parent_jobs.user_id', $publicId)
+            ->whereNotNull('parent_job_applications.nanny_rating');
+
+        $ratingsCount = (int) (clone $ratingsBase)->count();
+        $ratersCount = (int) ((clone $ratingsBase)
+            ->selectRaw('COUNT(DISTINCT parent_job_applications.nanny_id) as aggregate')
+            ->value('aggregate') ?? 0);
+        $average = (clone $ratingsBase)->avg('parent_job_applications.nanny_rating');
+        $averageRating = $average !== null ? round((float) $average, 2) : null;
+
+        return [
+            'average_rating' => $averageRating,
+            'jobs_posted_count' => $jobsPostedCount,
+            'ratings_count' => $ratingsCount,
+            'raters_count' => $ratersCount,
+        ];
+    }
+
+    private function buildParentReviews(?string $parentUserId): array
+    {
+        $publicId = strtoupper(trim((string) ($parentUserId ?? '')));
+        if ($publicId === '') {
+            return [];
+        }
+
+        $hasReviewColumn = Schema::hasColumn('parent_job_applications', 'nanny_review');
+        $hasRatedAtColumn = Schema::hasColumn('parent_job_applications', 'nanny_rated_at');
+        if (! $hasReviewColumn) {
+            return [];
+        }
+
+        $rows = ParentJobApplication::query()
+            ->visibleOnPlatform()
+            ->join('parent_jobs', 'parent_jobs.id', '=', 'parent_job_applications.job_id')
+            ->leftJoin('users as nannies', 'nannies.user_id', '=', 'parent_job_applications.nanny_id')
+            ->where('parent_jobs.user_id', $publicId)
+            ->whereNotNull('parent_job_applications.nanny_review')
+            ->whereRaw('TRIM(parent_job_applications.nanny_review) <> ""')
+            ->orderByDesc($hasRatedAtColumn ? 'parent_job_applications.nanny_rated_at' : 'parent_job_applications.updated_at')
+            ->limit(10)
+            ->get([
+                'parent_job_applications.id',
+                'parent_job_applications.nanny_rating',
+                'parent_job_applications.nanny_review',
+                'parent_job_applications.updated_at',
+                $hasRatedAtColumn ? 'parent_job_applications.nanny_rated_at' : 'parent_job_applications.updated_at as nanny_rated_at',
+                'nannies.name as nanny_name',
+            ]);
+
+        return $rows
+            ->map(function ($row) {
+                $reviewText = trim((string) ($row->nanny_review ?? ''));
+                if ($reviewText === '') {
+                    return null;
+                }
+
+                return [
+                    'id' => $row->id,
+                    'rating' => $row->nanny_rating !== null ? (float) $row->nanny_rating : null,
+                    'review' => $reviewText,
+                    'reviewer_name' => trim((string) ($row->nanny_name ?? '')) ?: 'Syttr',
+                    'reviewed_at' => optional($row->nanny_rated_at ?? $row->updated_at)?->toISOString(),
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
     }
 }

@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { apiRequest, getRuntimeApiKey, sanitizeToken } from "../Api";
+import { apiRequest, getRuntimeApiKey, isVerificationRequiredApiError, sanitizeToken } from "../Api";
 import NannyBottomNav, { NannyNavKey } from "../components/NannyBottomNav";
 import SafeScreen from "../components/SafeScreen";
 import { rf, rs } from "../utils/responsive";
@@ -83,6 +83,7 @@ type Props = {
   onNotifications?: () => void;
   onSettings?: () => void;
   onOpenBooking?: (event: any, date: string) => void;
+  onRequireVerification?: () => void;
 };
 type CalendarEvent = {
   id: string;
@@ -103,6 +104,7 @@ export default function NannyCalendarScreen({
   onNotifications,
   onSettings,
   onOpenBooking,
+  onRequireVerification,
 }: Props) {
   const insets = useSafeAreaInsets();
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -293,6 +295,11 @@ export default function NannyCalendarScreen({
 
       setEventsByDay(grouped);
     } catch (e) {
+      if (isVerificationRequiredApiError(e)) {
+        setEventsByDay({});
+        onRequireVerification?.();
+        return;
+      }
       console.log("Calendar load error", e);
     } finally {
       setLoading(false);

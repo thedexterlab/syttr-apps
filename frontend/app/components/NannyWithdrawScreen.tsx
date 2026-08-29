@@ -16,11 +16,12 @@ import {
   View,
 } from "react-native";
 import { rf, rs } from "../utils/responsive";
-import { addStripeExternalAccount, createStripeConnectAccount, createStripeToken, getPlatformCommission, getWalletBalance, getWalletTransactions, withdrawFromWallet } from "../Api";
+import { addStripeExternalAccount, createStripeConnectAccount, createStripeToken, getPlatformCommission, getWalletBalance, getWalletTransactions, isVerificationRequiredApiError, withdrawFromWallet } from "../Api";
 
 type Props = {
   navigation?: any;
   onBack?: () => void;
+  onRequireVerification?: () => void;
 };
 
 type PayoutMethod = "bank" | "card" | "stripe";
@@ -65,7 +66,7 @@ const getTransactionsArrayFromPayload = (payload: any): any[] => {
   return [];
 };
 
-const NannyWithdrawScreen: React.FC<Props> = ({ navigation, onBack }) => {
+const NannyWithdrawScreen: React.FC<Props> = ({ navigation, onBack, onRequireVerification }) => {
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PayoutMethod>("bank");
   const [note, setNote] = useState("");
@@ -165,12 +166,16 @@ const NannyWithdrawScreen: React.FC<Props> = ({ navigation, onBack }) => {
           ? rawBalance
           : Number.parseFloat(String(rawBalance ?? "").replace(/[^0-9.-]/g, ""));
       setBalance(Number.isFinite(parsed) ? parsed : 0);
-    } catch {
+    } catch (error: any) {
+      if (isVerificationRequiredApiError(error)) {
+        onRequireVerification?.();
+        return;
+      }
       setBalance(0);
     } finally {
       setLoadingBalance(false);
     }
-  }, [getAuthContext]);
+  }, [getAuthContext, onRequireVerification]);
 
   const fetchTransactions = React.useCallback(async () => {
     setLoadingTransactions(true);
@@ -182,12 +187,16 @@ const NannyWithdrawScreen: React.FC<Props> = ({ navigation, onBack }) => {
       }
       const response = await getWalletTransactions(token);
       setTransactions(getTransactionsArrayFromPayload(response));
-    } catch {
+    } catch (error: any) {
+      if (isVerificationRequiredApiError(error)) {
+        onRequireVerification?.();
+        return;
+      }
       setTransactions([]);
     } finally {
       setLoadingTransactions(false);
     }
-  }, [getAuthContext]);
+  }, [getAuthContext, onRequireVerification]);
 
   const fetchCommission = React.useCallback(async () => {
     try {
@@ -219,11 +228,15 @@ const NannyWithdrawScreen: React.FC<Props> = ({ navigation, onBack }) => {
       } else {
         setCommissionType(null);
       }
-    } catch {
+    } catch (error: any) {
+      if (isVerificationRequiredApiError(error)) {
+        onRequireVerification?.();
+        return;
+      }
       setCommissionRate(null);
       setCommissionType(null);
     }
-  }, [getAuthContext]);
+  }, [getAuthContext, onRequireVerification]);
 
   const syncStripeState = React.useCallback(async (openOnboarding = false) => {
     setLoadingStripeStatus(true);
@@ -262,11 +275,14 @@ const NannyWithdrawScreen: React.FC<Props> = ({ navigation, onBack }) => {
       if (openOnboarding) {
         throw error;
       }
+      if (isVerificationRequiredApiError(error)) {
+        onRequireVerification?.();
+      }
       return null;
     } finally {
       setLoadingStripeStatus(false);
     }
-  }, [getAuthContext]);
+  }, [getAuthContext, onRequireVerification]);
 
   React.useEffect(() => {
     void fetchBalance();
@@ -321,6 +337,10 @@ const NannyWithdrawScreen: React.FC<Props> = ({ navigation, onBack }) => {
         throw new Error("Missing Stripe onboarding link.");
       }
     } catch (e: any) {
+      if (isVerificationRequiredApiError(e)) {
+        onRequireVerification?.();
+        return;
+      }
       showError("Stripe Connect", e?.message || "Unable to start Stripe onboarding.");
     } finally {
       setConnecting(false);
@@ -372,6 +392,10 @@ const NannyWithdrawScreen: React.FC<Props> = ({ navigation, onBack }) => {
       setAmount("");
       setNote("");
     } catch (e: any) {
+      if (isVerificationRequiredApiError(e)) {
+        onRequireVerification?.();
+        return;
+      }
       const grossAmount =
         parseMoneyValue(e?.payload?.gross_amount) ??
         parseMoneyValue(e?.payload?.withdrawal?.gross_amount);
@@ -457,6 +481,10 @@ const NannyWithdrawScreen: React.FC<Props> = ({ navigation, onBack }) => {
       }
       Alert.alert("Payout method", "Saved successfully.");
     } catch (e: any) {
+      if (isVerificationRequiredApiError(e)) {
+        onRequireVerification?.();
+        return;
+      }
       const message = e?.message || "Unable to save payout method.";
       showError("Payout method", message);
     } finally {

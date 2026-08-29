@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { hp, rf, rs, wp } from "../utils/responsive";
 import SafeScreen from "../components/SafeScreen";
-import { apiRequest, sanitizeToken } from "../Api";
+import { apiRequest, isVerificationRequiredApiError, sanitizeToken } from "../Api";
 import { resolveSessionImageUrl } from "../../lib/nannySessionProfile";
 
 /* ----------------------------- TYPES ----------------------------- */
@@ -59,6 +59,7 @@ type Props = {
   navigation?: any;
   onBack?: () => void;
   onOpenProfile?: (nanny: Nanny) => void;
+  onRequireVerification?: () => void;
 };
 
 /* ----------------------------- CONFIG ----------------------------- */
@@ -221,6 +222,7 @@ export default function NannyListScreen({
   navigation,
   onBack,
   onOpenProfile,
+  onRequireVerification,
 }: Props) {
   const [nannies, setNannies] = useState<Nanny[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -262,12 +264,17 @@ export default function NannyListScreen({
 
       setNannies(list);
     } catch (e) {
+      if (isVerificationRequiredApiError(e)) {
+        onRequireVerification?.();
+        setNannies([]);
+        return;
+      }
       console.log("load nannies error", e instanceof Error ? e.message : e);
       setNannies([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onRequireVerification]);
 
   /* ----------------------------- SEARCH FILTER ----------------------------- */
 

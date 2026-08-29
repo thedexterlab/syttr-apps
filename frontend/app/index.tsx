@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Animated, AppState, Easing, LogBox, Platform, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { checkNannyApprovalStatus, isUserRejectedFromSources, isUserVerifiedFromSources } from './_Api';
-import { consumeStoredNotificationResponse } from '../lib/pushNotifications';
+import { apiRequest, checkNannyApprovalStatus, isUserRejectedFromSources, isUserVerifiedFromSources, isVerificationRequiredApiError } from './_Api';
+import { consumeStoredNotificationResponse, subscribeNotificationResponses } from '../lib/pushNotifications';
 
 import AvailabilityScreen from './Pages/AvailabilityScreen';
 import CreateClientProfileScreen from './Pages/CreateClientProfileScreen';
@@ -304,30 +304,111 @@ export default function Index() {
     [screenOrder]
   );
 
+  const pickNotificationValue = useCallback((...values: any[]) => {
+    for (const value of values) {
+      if (value === undefined || value === null) continue;
+      const text = String(value).trim();
+      if (text && text !== 'undefined' && text !== 'null') return value;
+    }
+    return undefined;
+  }, []);
+
+  const hasUsableBookingPayload = useCallback((payload: any) => {
+    if (!payload || typeof payload !== 'object') return false;
+    const job = payload?.job && typeof payload.job === 'object' ? payload.job : {};
+    const raw = payload?.raw && typeof payload.raw === 'object' ? payload.raw : {};
+    const rawData = raw?.data && typeof raw.data === 'object' ? raw.data : {};
+    const rawJob = raw?.job && typeof raw.job === 'object' ? raw.job : {};
+    const rawDataJob = rawData?.job && typeof rawData.job === 'object' ? rawData.job : {};
+    const roots = [payload, job, raw, rawData, rawJob, rawDataJob];
+    return roots.some((root) =>
+      Boolean(
+        pickNotificationValue(
+          root?.start_date,
+          root?.date,
+          root?.start_time,
+          root?.time,
+          root?.end_time,
+          root?.end,
+          root?.location,
+          root?.price,
+          root?.total_price,
+          root?.hourly_rate,
+          root?.hours,
+          Array.isArray(root?.kids) && root.kids.length ? 'kids' : undefined,
+          root?.kid?.name,
+          root?.child?.name
+        )
+      )
+    );
+  }, [pickNotificationValue]);
+
+  const buildNotificationDetailItem = useCallback((payload: any, options?: { type?: string; jobId?: any; applicationId?: any }) => {
+    const data = payload?.in_app?.data || payload?.data || payload || {};
+    const inApp = payload?.in_app || {};
+    const type = options?.type || String(payload?.type || data?.type || '').trim();
+    return {
+      ...inApp,
+      ...data,
+      id: payload?.notification_id || data?.notification_id || data?.id || payload?.id,
+      title: inApp?.title || data?.title || payload?.title || 'Notification',
+      message: inApp?.message || data?.message || payload?.body || '',
+      type: type || undefined,
+      job_id: options?.jobId,
+      application_id: options?.applicationId,
+      job: data?.job,
+      application: data?.application,
+      raw: payload,
+    };
+  }, []);
+
   const routeFromNotificationResponse = useCallback(async () => {
     const stored = await consumeStoredNotificationResponse();
+    if (!stored || stored.kind !== 'response') return;
     const payload = stored?.notification || {};
     const inApp = payload?.in_app || {};
     const data = inApp?.data || payload?.data || payload;
-    const type = String(payload?.type || data?.type || "").trim().toLowerCase();
+    const type = String(payload?.type || data?.type || payload?.event || data?.event || "").trim().toLowerCase();
     const conversationId =
       data?.conversation_id ||
       payload?.conversation_id ||
-      data?.in_app?.data?.conversation_id;
+      data?.in_app?.data?.conversation_id ||
+      data?.thread_id ||
+      payload?.thread_id;
     const jobId =
-      data?.job_id ||
-      data?.job?.id ||
-      payload?.job_id ||
-      payload?.job?.id;
+      pickNotificationValue(
+        data?.job_id,
+        data?.booking_id,
+        data?.job?.id,
+        data?.job?.job_id,
+        payload?.job_id,
+        payload?.booking_id,
+        payload?.job?.id,
+        payload?.job?.job_id
+      );
     const applicationId =
-      data?.application_id ||
-      data?.job_application_id ||
-      data?.application?.id ||
-      payload?.application_id;
+      pickNotificationValue(
+        data?.application_id,
+        data?.job_application_id,
+        data?.application?.id,
+        data?.application?.application_id,
+        payload?.application_id,
+        payload?.job_application_id
+      );
     const userType = String((await AsyncStorage.getItem('user_type')) || '').trim().toLowerCase();
     const isNanny = userType === 'nanny' || userType === 'syttr';
+    const detailItem = buildNotificationDetailItem(payload, { type, jobId, applicationId });
 
-    if (type === 'chat_message' || type === 'chat') {
+    const isRatingNotification = type === 'rate_sitter_prompt' || type === 'rate-sitter-prompt' || type === 'rate_parent_prompt' || type === 'rate-parent-prompt';
+    const isBookingNotification = ['job_started_parent', 'job_started_nanny', 'booking_started', 'job_completed', 'booking_completed'].includes(type);
+
+    if (isRatingNotification) {
+      setSelectedNotificationDetail(detailItem);
+      setScreen(isNanny ? 'nannyNotifications' : 'parentNotifications');
+      return;
+    }
+
+    if (type === 'chat_message' || type === 'chat' || type === 'new_message') {
       if (isNanny) {
         setSelectedNannyChatParams({
           conversationId,
@@ -348,19 +429,18 @@ export default function Index() {
     }
 
     if (isNanny) {
+      if (isBookingNotification && jobId) {
+        setSelectedNannyBooking({ ...data, id: String(jobId), job_id: jobId, application_id: applicationId, raw: data, status: type });
+        setSelectedNannyBookingDate(undefined);
+        setScreen('nannyBookingDetail');
+        return;
+      }
       if (type === 'hire_request' || type === 'extra_hours_request') {
-        setSelectedNotificationDetail({
-          ...inApp,
-          ...data,
-          type,
-          job_id: jobId,
-          application_id: applicationId,
-          raw: payload,
-        });
+        setSelectedNotificationDetail(detailItem);
         setScreen('nannyNotificationDetail');
         return;
       }
-      if (jobId || applicationId) {
+      if ((jobId || applicationId) && hasUsableBookingPayload(data)) {
         setSelectedNannyBooking({
           ...data,
           id: String(jobId || applicationId),
@@ -373,7 +453,18 @@ export default function Index() {
         setScreen('nannyBookingDetail');
         return;
       }
-    } else if (jobId || applicationId) {
+      if (jobId || applicationId) {
+        setSelectedNotificationDetail(detailItem);
+        setScreen('nannyNotificationDetail');
+        return;
+      }
+    } else if (isBookingNotification && jobId) {
+      setClientBookingOrigin('parentNotifications');
+      setSelectedClientBooking({ ...data, id: String(jobId), job_id: jobId, application_id: applicationId, raw: data, status: type });
+      setSelectedClientBookingDate(undefined);
+      setScreen('clientBookingDetail');
+      return;
+    } else if ((jobId || applicationId) && hasUsableBookingPayload(data)) {
       setClientBookingOrigin('parentNotifications');
       setSelectedClientBooking({
         ...data,
@@ -385,11 +476,19 @@ export default function Index() {
       });
       setSelectedClientBookingDate(undefined);
       setScreen('clientBookingDetail');
+      return;
+    } else if (jobId || applicationId) {
+      setSelectedNotificationDetail(detailItem);
+      setScreen('parentNotificationDetail');
+      return;
     }
-  }, []);
+  }, [buildNotificationDetailItem, hasUsableBookingPayload, pickNotificationValue]);
 
   useEffect(() => {
     void routeFromNotificationResponse();
+    return subscribeNotificationResponses(() => {
+      void routeFromNotificationResponse();
+    });
   }, [routeFromNotificationResponse]);
 
   useEffect(() => {
@@ -542,6 +641,32 @@ export default function Index() {
       ]),
     []
   );
+  const parentRestrictedScreens = useMemo<Set<ScreenName>>(
+    () =>
+      new Set<ScreenName>([
+        'parentHome',
+        'parentSettings',
+        'parentSupportTickets',
+        'parentJobRequests',
+        'parentJobRequestDetail',
+        'clientBookingDetail',
+        'parentManageChildren',
+        'parentProfile',
+        'parentNannyList',
+        'parentNannyProfile',
+        'favoriteNannies',
+        'parentTransactionHistory',
+        'subscription',
+        'postJob',
+        'jobStatus',
+        'parentCalendar',
+        'parentNotifications',
+        'parentNotificationDetail',
+        'parentMessages',
+        'clientChat',
+      ]),
+    []
+  );
   const nannyVerificationFlowScreens = useMemo<Set<ScreenName>>(
     () =>
       new Set<ScreenName>([
@@ -657,6 +782,7 @@ export default function Index() {
             res?.data?.interview?.status ||
             res?.interview_status ||
             res?.data?.interview_status ||
+            storedInterviewStatus ||
             ''
         )
           .toLowerCase()
@@ -720,7 +846,11 @@ export default function Index() {
             setScreen('interviewPending');
           }
         }
-      } catch {
+      } catch (error) {
+        if (isVerificationRequiredApiError(error) && isActive && screen !== 'getVerified') {
+          setVerificationOrigin('nannyVerification');
+          setScreen('getVerified');
+        }
         // Ignore polling failures and keep current UI state.
       }
     };
@@ -772,6 +902,104 @@ export default function Index() {
       active = false;
     };
   }, [nannyVerificationFlowScreens, screen]);
+
+  useEffect(() => {
+    let active = true;
+
+    const enforceParentStatus = async () => {
+      if (!parentRestrictedScreens.has(screen)) return;
+
+      const [[, userType], [, userId], [, token]] = await AsyncStorage.multiGet([
+        'user_type',
+        'user_id',
+        'token',
+      ]);
+      if (!active) return;
+
+      const normalizedUserType = String(userType || '').toLowerCase().trim();
+      if (['nanny', 'syttr'].includes(normalizedUserType)) return;
+
+      const normalizedUserId = String(userId || '').trim();
+      if (!normalizedUserId) return;
+
+      try {
+        const cleanToken = String(token || '')
+          .replace(/^Bearer\s+/i, '')
+          .replace(/"/g, '')
+          .trim();
+        const profileRes: any = await apiRequest('profile-status', {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            ...(cleanToken ? { Authorization: `Bearer ${cleanToken}` } : {}),
+          },
+          body: JSON.stringify({ user_id: normalizedUserId }),
+        });
+        if (!active) return;
+
+        const status = String(
+          profileRes?.status ||
+            profileRes?.data?.status ||
+            profileRes?.approval_status ||
+            profileRes?.data?.approval_status ||
+            ''
+        )
+          .toLowerCase()
+          .trim();
+        const verificationRequired =
+          typeof profileRes?.verification_required === 'boolean'
+            ? profileRes.verification_required
+            : typeof profileRes?.data?.verification_required === 'boolean'
+            ? profileRes.data.verification_required
+            : null;
+        const isVerified =
+          typeof profileRes?.is_verified === 'boolean'
+            ? profileRes.is_verified
+            : typeof profileRes?.data?.is_verified === 'boolean'
+            ? profileRes.data.is_verified
+            : null;
+
+        if (
+          profileRes?.is_blacklisted ||
+          profileRes?.data?.is_blacklisted ||
+          status.includes('blacklist') ||
+          status.includes('reject')
+        ) {
+          await AsyncStorage.setItem('user_verification_status', 'blacklisted');
+          if (active && screen !== 'parentBlacklist') setScreen('parentBlacklist');
+          return;
+        }
+
+        const isVerifiedByBackend = isUserVerifiedFromSources({
+          adminStatus: status,
+          profileStatus: status,
+          isVerified,
+          verificationRequired,
+        });
+        await AsyncStorage.setItem(
+          'user_verification_status',
+          isVerifiedByBackend ? 'approved' : (status || 'pending')
+        );
+
+        if (!isVerifiedByBackend && (verificationRequired === true || isVerified === false)) {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
+        }
+      } catch (error) {
+        if (isVerificationRequiredApiError(error) && active && screen !== 'getVerified') {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
+        }
+        // Keep the current UI on transient status-check failures.
+      }
+    };
+
+    void enforceParentStatus();
+    return () => {
+      active = false;
+    };
+  }, [parentRestrictedScreens, screen]);
 
   const openStaticScreen = (target: StaticScreenName, origin: ScreenName = screen) => {
     setStaticBackTargets((prev) => ({ ...prev, [target]: origin }));
@@ -898,8 +1126,19 @@ export default function Index() {
         return;
       }
 
+      if (!['approved', 'verified'].includes(parentStatus)) {
+        setVerificationOrigin('loginPending');
+        setScreen('getVerified');
+        return;
+      }
+
       setScreen('parentHome');
-    } catch {
+    } catch (error) {
+      if (isVerificationRequiredApiError(error)) {
+        setVerificationOrigin('nannyVerification');
+        setScreen('getVerified');
+        return;
+      }
       setScreen('welcome');
     }
   };
@@ -929,6 +1168,10 @@ export default function Index() {
           setScreen('forgotPassword');
         }}
         onClientSuccess={() => setScreen('parentHome')}
+        onClientPending={() => {
+          setVerificationOrigin('loginPending');
+          setScreen('getVerified');
+        }}
         onClientBlacklisted={() => setScreen('parentBlacklist')}
         onNannySuccess={() => setScreen('nannyHome')}
         onNannyPending={() => {
@@ -1036,6 +1279,10 @@ export default function Index() {
       <ParentSupportTicketsScreen
         onBack={() => setScreen(parentSupportTicketsBackTarget)}
         onCreateTicket={() => openStaticScreen('parentContactUs', 'parentSupportTickets')}
+        onRequireVerification={() => {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
+        }}
       />
     );
   } else if (screen === 'parentFaq') {
@@ -1072,6 +1319,10 @@ export default function Index() {
         onNotifications={() => setScreen('parentNotifications')}
         onCalendar={() => setScreen('parentCalendar')}
         onSettings={() => setScreen('parentSettings')}
+        onRequireVerification={() => {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
+        }}
       />
     );
   } else if (screen === 'parentJobRequestDetail') {
@@ -1096,6 +1347,10 @@ export default function Index() {
         onNotifications={() => setScreen('parentNotifications')}
         onCalendar={() => setScreen('parentCalendar')}
         onSettings={() => setScreen('parentSettings')}
+        onRequireVerification={() => {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
+        }}
       />
     );
   } else if (screen === 'parentNannyProfile') {
@@ -1114,6 +1369,10 @@ export default function Index() {
         onRequirePayment={() => {
           setPaymentMethodsOrigin('parentNannyProfile');
           setScreen('paymentMethods');
+        }}
+        onRequireVerification={() => {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
         }}
         onBack={() =>
           setScreen(
@@ -1175,6 +1434,10 @@ export default function Index() {
           });
           setScreen('clientChat');
         }}
+        onRequireVerification={() => {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
+        }}
       />
     );
   } else if (screen === 'parentManageChildren') {
@@ -1189,6 +1452,10 @@ export default function Index() {
               : 'parentSettings'
           )
         }
+        onRequireVerification={() => {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
+        }}
       />
     );
   } else if (screen === 'parentProfile') {
@@ -1203,12 +1470,20 @@ export default function Index() {
             }
           },
         }}
+        onRequireVerification={() => {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
+        }}
       />
     );
   } else if (screen === 'parentNannyList') {
     renderedScreen = (
       <NannyListScreen
         onBack={() => setScreen('parentHome')}
+        onRequireVerification={() => {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
+        }}
         onOpenProfile={(nanny) => {
           setNannyProfileOrigin('parentNannyList');
           setSelectedParentNannyProfile(nanny || null);
@@ -1220,6 +1495,10 @@ export default function Index() {
     renderedScreen = (
       <FavoriteNanniesScreen
         onBack={() => setScreen('parentSettings')}
+        onRequireVerification={() => {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
+        }}
         onOpenProfile={(nanny) => {
           setNannyProfileOrigin('favoriteNannies');
           setSelectedParentNannyProfile(nanny || null);
@@ -1234,7 +1513,15 @@ export default function Index() {
       />
     );
   } else if (screen === 'parentTransactionHistory') {
-    renderedScreen = <ParentTransactionHistoryScreen onBack={() => setScreen('parentSettings')} />;
+    renderedScreen = (
+      <ParentTransactionHistoryScreen
+        onBack={() => setScreen('parentSettings')}
+        onRequireVerification={() => {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
+        }}
+      />
+    );
   } else if (screen === 'subscription') {
     renderedScreen = (
       <SubscriptionScreen
@@ -1242,6 +1529,10 @@ export default function Index() {
         onAddPaymentMethod={() => {
           setPaymentMethodsOrigin('subscription');
           setScreen('paymentMethods');
+        }}
+        onRequireVerification={() => {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
         }}
       />
     );
@@ -1252,6 +1543,10 @@ export default function Index() {
         onRequirePayment={() => {
           setPaymentMethodsOrigin('postJob');
           setScreen('paymentMethods');
+        }}
+        onRequireVerification={() => {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
         }}
         onAddChild={() => {
           setManageChildrenOrigin('postJob');
@@ -1269,6 +1564,10 @@ export default function Index() {
           setSelectedClientBooking(event);
           setSelectedClientBookingDate(date);
           setScreen('clientBookingDetail');
+        }}
+        onRequireVerification={() => {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
         }}
       />
     );
@@ -1295,11 +1594,20 @@ export default function Index() {
         onJobRequests={() => setScreen('parentJobRequests')}
         onNotifications={() => setScreen('parentNotifications')}
         onSettings={() => setScreen('parentSettings')}
+        onRequireVerification={() => {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
+        }}
       />
     );
   } else if (screen === 'parentNotifications') {
     renderedScreen = (
       <NotificationsScreen
+        initialRatingNotification={selectedNotificationDetail}
+        onRequireVerification={() => {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
+        }}
         onOpenDetail={(item) => {
           const rawData = item?.raw?.data || item?.raw?.notification?.data || {};
           const jobId =
@@ -1309,15 +1617,17 @@ export default function Index() {
             rawData?.job_id ||
             rawData?.job?.id ||
             rawData?.job?.job_id;
-          const notificationType = String(item?.type || rawData?.type || '').trim().toLowerCase();
-          const notificationText = `${item?.title || ''} ${item?.subtitle || ''} ${item?.message || ''}`.toLowerCase();
-          const isCompletionReminder =
-            notificationType === 'job_complete_reminder_parent' ||
-            (
-              notificationType === '' &&
-              notificationText.includes('complete job') &&
-              notificationText.includes('booking')
-            );
+          const notificationType = String(item?.type || rawData?.type || rawData?.event || '').trim().toLowerCase();
+          if (['chat_message', 'chat', 'new_message'].includes(notificationType)) {
+            setSelectedParentChatParams({
+              conversationId: rawData?.conversation_id || item?.raw?.conversation_id || rawData?.thread_id,
+              userId: rawData?.user_id || rawData?.sender_id,
+              nannyId: rawData?.nanny_id,
+            });
+            setScreen('clientChat');
+            return;
+          }
+          const isCompletionReminder = ['job_started_parent', 'booking_started', 'job_completed', 'booking_completed', 'job_complete_reminder_parent'].includes(notificationType);
 
           if (isCompletionReminder && jobId) {
             setClientBookingOrigin('parentNotifications');
@@ -1355,6 +1665,10 @@ export default function Index() {
       <NotificationDetailScreen
         route={{ params: { item: selectedNotificationDetail || undefined } }}
         onBack={() => setScreen('parentNotifications')}
+        onRequireVerification={() => {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
+        }}
       />
     );
   } else if (screen === 'parentMessages') {
@@ -1370,6 +1684,10 @@ export default function Index() {
         onNotifications={() => setScreen('parentNotifications')}
         onCalendar={() => setScreen('parentCalendar')}
         onSettings={() => setScreen('parentSettings')}
+        onRequireVerification={() => {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
+        }}
       />
     );
   } else if (screen === 'clientChat') {
@@ -1387,6 +1705,10 @@ export default function Index() {
             name: params?.name,
           });
           setScreen('parentNannyProfile');
+        }}
+        onRequireVerification={() => {
+          setVerificationOrigin('home');
+          setScreen('getVerified');
         }}
       />
     );
@@ -1417,6 +1739,10 @@ export default function Index() {
         onNotifications={() => setScreen('nannyNotifications')}
         onCalendar={() => setScreen('nannyCalendar')}
         onSettings={() => setScreen('nannySettings')}
+        onRequireVerification={() => {
+          setVerificationOrigin('nannyVerification');
+          setScreen('getVerified');
+        }}
         onRejected={() => setScreen('interviewPending')}
       />
     );
@@ -1491,14 +1817,34 @@ export default function Index() {
       />
     );
   } else if (screen === 'nannyWithdraw') {
-    renderedScreen = <NannyWithdrawScreen onBack={() => setScreen(nannyWithdrawOrigin)} />;
+    renderedScreen = (
+      <NannyWithdrawScreen
+        onBack={() => setScreen(nannyWithdrawOrigin)}
+        onRequireVerification={() => {
+          setVerificationOrigin('nannyVerification');
+          setScreen('getVerified');
+        }}
+      />
+    );
   } else if (screen === 'nannyProfileView') {
-    renderedScreen = <NannyProfileViewScreen onBack={() => setScreen('nannySettings')} />;
+    renderedScreen = (
+      <NannyProfileViewScreen
+        onBack={() => setScreen('nannySettings')}
+        onRequireVerification={() => {
+          setVerificationOrigin('nannyVerification');
+          setScreen('getVerified');
+        }}
+      />
+    );
   } else if (screen === 'nannyParentProfile') {
     renderedScreen = (
       <ParentProfileViewScreen
         parent={selectedNannyParentProfile || undefined}
         onBack={() => setScreen(nannyParentProfileOrigin)}
+        onRequireVerification={() => {
+          setVerificationOrigin('nannyVerification');
+          setScreen('getVerified');
+        }}
       />
     );
   } else if (screen === 'nannyFavoriteJobs') {
@@ -1511,6 +1857,10 @@ export default function Index() {
         onMessages={() => setScreen('nannyMessages')}
         onNotifications={() => setScreen('nannyNotifications')}
         onSettings={() => setScreen('nannySettings')}
+        onRequireVerification={() => {
+          setVerificationOrigin('nannyVerification');
+          setScreen('getVerified');
+        }}
         onOpenJob={(job) => {
           setSelectedNannyJob(job);
           setNannyJobOrigin('nannyFavoriteJobs');
@@ -1532,6 +1882,10 @@ export default function Index() {
         onJobs={() => setScreen('nannyJobs')}
         onNotifications={() => setScreen('nannyNotifications')}
         onSettings={() => setScreen('nannySettings')}
+        onRequireVerification={() => {
+          setVerificationOrigin('nannyVerification');
+          setScreen('getVerified');
+        }}
       />
     );
   } else if (screen === 'nannyBookingDetail') {
@@ -1555,12 +1909,40 @@ export default function Index() {
           setNannyChatOrigin('nannyBookingDetail');
           setScreen('nannyChat');
         }}
+        onRequireVerification={() => {
+          setVerificationOrigin('nannyVerification');
+          setScreen('getVerified');
+        }}
       />
     );
   } else if (screen === 'nannyNotifications') {
     renderedScreen = (
       <NannyNotificationsScreen
+        initialRatingNotification={selectedNotificationDetail}
+        onRequireVerification={() => {
+          setVerificationOrigin('nannyVerification');
+          setScreen('getVerified');
+        }}
         onOpenDetail={(item) => {
+          const rawData = item?.raw?.data || item?.raw?.notification?.data || {};
+          const notificationType = String(item?.type || rawData?.type || rawData?.event || '').trim().toLowerCase();
+          const jobId = item?.job_id || rawData?.job_id || rawData?.booking_id || item?.job?.id || rawData?.job?.id;
+          if (['chat_message', 'chat', 'new_message'].includes(notificationType)) {
+            setSelectedNannyChatParams({
+              conversationId: rawData?.conversation_id || item?.raw?.conversation_id || rawData?.thread_id,
+              userId: rawData?.user_id || rawData?.sender_id,
+              nannyId: rawData?.nanny_id,
+            });
+            setNannyChatOrigin('nannyMessages');
+            setScreen('nannyChat');
+            return;
+          }
+          if (['job_started_nanny', 'booking_started', 'job_completed', 'booking_completed'].includes(notificationType) && jobId) {
+            setSelectedNannyBooking({ ...rawData, ...item, id: String(jobId), job_id: jobId, raw: item?.raw || item, status: notificationType });
+            setSelectedNannyBookingDate(undefined);
+            setScreen('nannyBookingDetail');
+            return;
+          }
           setSelectedNotificationDetail(item);
           setScreen('nannyNotificationDetail');
         }}
@@ -1577,6 +1959,10 @@ export default function Index() {
       <NotificationDetailScreen
         route={{ params: { item: selectedNotificationDetail || undefined } }}
         onBack={() => setScreen('nannyNotifications')}
+        onRequireVerification={() => {
+          setVerificationOrigin('nannyVerification');
+          setScreen('getVerified');
+        }}
       />
     );
   } else if (screen === 'nannyMessages') {
@@ -1593,6 +1979,10 @@ export default function Index() {
         onNotifications={() => setScreen('nannyNotifications')}
         onCalendar={() => setScreen('nannyCalendar')}
         onSettings={() => setScreen('nannySettings')}
+        onRequireVerification={() => {
+          setVerificationOrigin('nannyVerification');
+          setScreen('getVerified');
+        }}
       />
     );
   } else if (screen === 'nannyChat') {
@@ -1601,6 +1991,10 @@ export default function Index() {
         route={{ params: selectedNannyChatParams || undefined }}
         onBack={() => setScreen(nannyChatOrigin)}
         onCloseChat={() => setScreen(nannyChatOrigin)}
+        onRequireVerification={() => {
+          setVerificationOrigin('nannyVerification');
+          setScreen('getVerified');
+        }}
       />
     );
   } else if (screen === 'nannyAboutUs') {

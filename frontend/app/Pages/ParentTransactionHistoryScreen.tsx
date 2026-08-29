@@ -12,12 +12,13 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BASE_URL, getRuntimeApiKey, sanitizeToken } from "../Api";
+import { BASE_URL, getRuntimeApiKey, isVerificationRequiredApiError, sanitizeToken } from "../Api";
 import { hp, rf, rs, wp } from "../utils/responsive";
 
 type Props = {
   navigation?: any;
   onBack?: () => void;
+  onRequireVerification?: () => void;
 };
 
 type TransactionItem = {
@@ -110,7 +111,7 @@ const normalizeTransactions = (rows: any[]): TransactionItem[] => {
   return items.sort((a, b) => Date.parse(b.createdAtRaw || "") - Date.parse(a.createdAtRaw || ""));
 };
 
-export default function ParentTransactionHistoryScreen({ navigation, onBack }: Props) {
+export default function ParentTransactionHistoryScreen({ navigation, onBack, onRequireVerification }: Props) {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -145,8 +146,16 @@ export default function ParentTransactionHistoryScreen({ navigation, onBack }: P
               ...(apiKey ? { "x-api-key": apiKey } : {}),
             },
           });
-          if (!res.ok) continue;
           const payload = await res.json().catch(() => null);
+          if (
+            !res.ok &&
+            isVerificationRequiredApiError({ status: res.status, payload, message: payload?.message })
+          ) {
+            setItems([]);
+            onRequireVerification?.();
+            return;
+          }
+          if (!res.ok) continue;
           const rows = getRowsFromPayload(payload);
           if (rows.length) {
             resolvedRows = rows;
@@ -155,7 +164,12 @@ export default function ParentTransactionHistoryScreen({ navigation, onBack }: P
           if (!resolvedRows.length) {
             resolvedRows = rows;
           }
-        } catch {
+        } catch (error) {
+          if (isVerificationRequiredApiError(error)) {
+            setItems([]);
+            onRequireVerification?.();
+            return;
+          }
           // try next endpoint
         }
       }
@@ -165,7 +179,7 @@ export default function ParentTransactionHistoryScreen({ navigation, onBack }: P
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [onRequireVerification]);
 
   useEffect(() => {
     void loadTransactions();

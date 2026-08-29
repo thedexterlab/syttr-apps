@@ -193,8 +193,6 @@ export default function SettingsScreen({
     if (
       val === "verified" ||
       val === "approved" ||
-      val === "completed" ||
-      val === "quickapp-completed" ||
       val.includes("accept")
     ) {
       return "verified";
@@ -202,6 +200,14 @@ export default function SettingsScreen({
     if (
       val === "app-pending" ||
       val === "pending" ||
+      val === "completed" ||
+      val === "quickapp-completed" ||
+      val.includes("background_check") ||
+      val.includes("background check") ||
+      val.includes("admin_approval_pending") ||
+      val.includes("admin approval pending") ||
+      val.includes("payment_required") ||
+      val.includes("payment required") ||
       val.includes("quickapp.created") ||
       val.includes("order.quickapp.completed")
     ) {
@@ -348,6 +354,17 @@ export default function SettingsScreen({
         setVerificationStatus("verified");
         return;
       }
+      if (
+        profileVerificationRequired === true ||
+        (profileVerificationRequired !== false && profileVerifiedFlag === false)
+      ) {
+        const pendingStatus = profileStatus && profileStatus !== "unknown" ? profileStatus : "pending";
+        setTazStatus(pendingStatus);
+        await AsyncStorage.setItem("user_verification_status", pendingStatus);
+        setVerificationStatus(normalizeStatus(pendingStatus));
+        onGetVerified?.();
+        return;
+      }
 
       const data = await apiRequest<any>("taz/status", {
         method: "POST",
@@ -475,8 +492,6 @@ export default function SettingsScreen({
     if (!raw) return "";
     const normalized = raw.toLowerCase().trim();
     if (
-      normalized === "completed" ||
-      normalized === "quickapp-completed" ||
       normalized === "verified" ||
       normalized === "approved"
     ) {
@@ -484,7 +499,15 @@ export default function SettingsScreen({
     }
     if (
       normalized === "app-pending" ||
-      normalized === "pending"
+      normalized === "pending" ||
+      normalized === "completed" ||
+      normalized === "quickapp-completed" ||
+      normalized.includes("background_check") ||
+      normalized.includes("background check") ||
+      normalized.includes("admin_approval_pending") ||
+      normalized.includes("admin approval pending") ||
+      normalized.includes("payment_required") ||
+      normalized.includes("payment required")
     ) {
       return "Pending";
     }

@@ -86,6 +86,7 @@ type Props = {
   onTermsPress?: () => void;
   onPrivacyPress?: () => void;
   onClientSuccess?: () => void;
+  onClientPending?: () => void;
   onClientBlacklisted?: () => void;
   onNannySuccess?: () => void;
   onNannyPending?: () => void;
@@ -189,6 +190,7 @@ const LoginScreen: React.FC<Props> = ({
   onTermsPress = () => {},
   onPrivacyPress = () => {},
   onClientSuccess = () => {},
+  onClientPending = () => {},
   onClientBlacklisted = () => {},
   onNannySuccess = () => {},
   onNannyPending = () => {},
@@ -251,7 +253,6 @@ const LoginScreen: React.FC<Props> = ({
                 allowAlert: true,
                 allowBadge: true,
                 allowSound: true,
-                allowAnnouncements: true,
               },
             });
         const notificationGranted =
@@ -374,6 +375,49 @@ const LoginScreen: React.FC<Props> = ({
           (clientResp as any)?.approval_status ||
           ((clientResp as any)?.is_blacklisted ? "blacklisted" : "active");
         const normalizedClientStatus = String(statusRaw || "active").toLowerCase();
+        const clientVerificationRequired =
+          typeof (clientResp as any)?.verification_required === "boolean"
+            ? (clientResp as any).verification_required
+            : typeof (clientResp as any)?.data?.verification_required === "boolean"
+            ? (clientResp as any).data.verification_required
+            : null;
+        const clientIsVerified =
+          typeof (clientResp as any)?.is_verified === "boolean"
+            ? (clientResp as any).is_verified
+            : typeof (clientResp as any)?.data?.is_verified === "boolean"
+            ? (clientResp as any).data.is_verified
+            : null;
+        const clientHasAuthoritativeVerificationState =
+          clientVerificationRequired !== null || clientIsVerified !== null;
+        const clientStatusIndicatesApproved =
+          normalizedClientStatus.includes("approved") ||
+          normalizedClientStatus.includes("verified") ||
+          normalizedClientStatus === "completed" ||
+          normalizedClientStatus === "complete";
+        const clientStatusRequiresVerification =
+          normalizedClientStatus.includes("payment_required") ||
+          normalizedClientStatus.includes("payment required") ||
+          normalizedClientStatus.includes("background_check") ||
+          normalizedClientStatus.includes("background check") ||
+          normalizedClientStatus.includes("admin_approval_pending") ||
+          normalizedClientStatus.includes("admin approval pending") ||
+          normalizedClientStatus.includes("pending_verification") ||
+          normalizedClientStatus.includes("pending verification") ||
+          normalizedClientStatus.includes("unverified") ||
+          normalizedClientStatus.includes("under_review") ||
+          normalizedClientStatus.includes("under review") ||
+          normalizedClientStatus.includes("pending");
+        const clientIsApprovedOrVerified =
+          clientVerificationRequired === false ||
+          (clientIsVerified === true && clientVerificationRequired !== true) ||
+          (!clientHasAuthoritativeVerificationState && clientStatusIndicatesApproved);
+        const clientRequiresVerificationGate =
+          clientVerificationRequired === true ||
+          (clientVerificationRequired !== false && clientIsVerified === false) ||
+          clientStatusRequiresVerification;
+        const persistedClientStatus = clientIsApprovedOrVerified
+          ? "approved"
+          : normalizedClientStatus;
 
         const clientName =
           displayName ||
@@ -396,21 +440,21 @@ const LoginScreen: React.FC<Props> = ({
         if (profile?.about_me) sets.push(["user_about", profile.about_me]);
         if (profile?.number) sets.push(["user_phone", profile.number]);
         if (imageUrl) sets.push(["user_image", imageUrl]);
-        sets.push(["user_verification_status", normalizedClientStatus]);
+        sets.push(["user_verification_status", persistedClientStatus]);
         await AsyncStorage.multiRemove([
           ...NANNY_STORAGE_KEYS,
         ]);
         await AsyncStorage.multiSet(sets);
         await requestPostLoginPermissions({ requestLocation: true });
         await rebindPushRegistrationForCurrentSession().catch(() => {});
-        if (navigation?.replace) {
+        if (normalizedClientStatus.includes("blacklist")) {
+          onClientBlacklisted();
+        } else if (clientRequiresVerificationGate && !clientIsApprovedOrVerified) {
+          onClientPending();
+        } else if (navigation?.replace) {
           navigation.replace("ParentsHomeTabs");
         } else {
-          if (normalizedClientStatus.includes("blacklist")) {
-            onClientBlacklisted();
-          } else {
-            onClientSuccess();
-          }
+          onClientSuccess();
         }
         setLoading(false);
         return;
@@ -518,14 +562,38 @@ const LoginScreen: React.FC<Props> = ({
         Boolean(payload?.is_blacklisted) ||
         statusLower.includes("reject") ||
         statusLower.includes("blacklist");
-      const isApprovedOrVerified =
-        isVerified === true ||
-        verificationRequired === false ||
+      const hasAuthoritativeVerificationState =
+        verificationRequired !== null || isVerified !== null;
+      const statusIndicatesApproved =
         statusLower.includes("approved") ||
         statusLower.includes("verified") ||
-        statusLower.includes("completed");
+        statusLower === "completed" ||
+        statusLower === "complete";
+      const statusRequiresVerification =
+        statusLower.includes("payment_required") ||
+        statusLower.includes("payment required") ||
+        statusLower.includes("background_check_pending") ||
+        statusLower.includes("background check pending") ||
+        statusLower.includes("background_check_required") ||
+        statusLower.includes("background check required") ||
+        statusLower.includes("background_check_completed") ||
+        statusLower.includes("background check completed") ||
+        statusLower.includes("admin_approval_pending") ||
+        statusLower.includes("admin approval pending") ||
+        statusLower.includes("pending_verification") ||
+        statusLower.includes("pending verification") ||
+        statusLower.includes("verification_required") ||
+        statusLower.includes("verification required") ||
+        statusLower.includes("under_review") ||
+        statusLower.includes("under review");
+      const isApprovedOrVerified =
+        verificationRequired === false ||
+        (isVerified === true && verificationRequired !== true) ||
+        (!hasAuthoritativeVerificationState && statusIndicatesApproved);
       const requiresVerificationGate =
         verificationRequired === true ||
+        (verificationRequired !== false && isVerified === false) ||
+        statusRequiresVerification ||
         statusLower.includes("pending_verification") ||
         statusLower.includes("pending verification") ||
         (statusLower.includes("pending") && !isApprovedOrVerified);

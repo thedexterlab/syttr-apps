@@ -17,7 +17,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { apiRequest, BASE_URL, getRuntimeApiKey } from "../Api";
+import { apiRequest, BASE_URL, getRuntimeApiKey, isVerificationRequiredApiError } from "../Api";
 import SpinnerTimePicker from "./SpinnerTimePicker";
 import { subscribeToNotifications } from "../../lib/pusherClient";
 import { MapView, Marker, PROVIDER_GOOGLE } from "../../lib/WebSafeMap";
@@ -76,6 +76,7 @@ type Props = {
     userId?: string | number;
     name?: string;
   }) => void;
+  onRequireVerification?: () => void;
 };
 
 type DetailBundle = {
@@ -797,6 +798,7 @@ export default function ClientBookingDetailScreen({
   onBack,
   onViewSyttrProfile,
   onMessageSyttr,
+  onRequireVerification,
 }: Props) {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
@@ -865,11 +867,13 @@ export default function ClientBookingDetailScreen({
     if (!id) return false;
 
     try {
-      const [tokenRaw, userId] = await Promise.all([
+      const [tokenRaw, userId, apiKeyRaw] = await Promise.all([
         AsyncStorage.getItem("token"),
         AsyncStorage.getItem("user_id"),
+        AsyncStorage.getItem("api_key"),
       ]);
       const token = String(tokenRaw || "").replace(/^Bearer\s+/i, "").replace(/"/g, "").trim();
+      const apiKey = String(apiKeyRaw || "").trim() || getRuntimeApiKey() || undefined;
 
       let res = await fetch(`${BASE_URL}job/get-details`, {
         method: "POST",
@@ -877,6 +881,7 @@ export default function ClientBookingDetailScreen({
           Accept: "application/json",
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(apiKey ? { "x-api-key": apiKey } : {}),
         },
         body: JSON.stringify({
           job_id: Number.isFinite(Number(id)) ? Number(id) : id,
@@ -903,6 +908,14 @@ export default function ClientBookingDetailScreen({
         ? nextJob.applications
         : [];
 
+      if (
+        (!res.ok || json?.success === false) &&
+        isVerificationRequiredApiError({ status: res.status, payload: json, message: json?.message })
+      ) {
+        onRequireVerification?.();
+        return false;
+      }
+
       if ((!res.ok || !json?.success) && res.status === 401 && userId) {
         res = await fetch(`${BASE_URL}parent-jobs`, {
           method: "POST",
@@ -910,10 +923,18 @@ export default function ClientBookingDetailScreen({
             Accept: "application/json",
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(apiKey ? { "x-api-key": apiKey } : {}),
           },
           body: JSON.stringify({ user_id: userId, per_page: 100 }),
         });
         json = await res.json().catch(() => null);
+        if (
+          (!res.ok || json?.success === false) &&
+          isVerificationRequiredApiError({ status: res.status, payload: json, message: json?.message })
+        ) {
+          onRequireVerification?.();
+          return false;
+        }
         const list = Array.isArray(json?.data?.data)
           ? json.data.data
           : Array.isArray(json?.data)
@@ -939,10 +960,13 @@ export default function ClientBookingDetailScreen({
       });
       setDetailJob(nextJob);
       return true;
-    } catch {
+    } catch (error) {
+      if (isVerificationRequiredApiError(error)) {
+        onRequireVerification?.();
+      }
       return false;
     }
-  }, [jobId]);
+  }, [jobId, onRequireVerification]);
 
   const applyExtraHoursSnapshot = React.useCallback((snapshot: any) => {
     const source =
@@ -1092,8 +1116,31 @@ export default function ClientBookingDetailScreen({
     };
   }, [applyExtraHoursSnapshot, jobId, notifyExtraHoursAccepted, refreshJobDetails]);
 
+  const resolvedParentDisplayStatus =
+    detailBundle?.job?.parent_display_status ||
+    rawJob?.parent_display_status ||
+    "";
+  const jobStatusRaw =
+    resolvedParentDisplayStatus ||
+    detailBundle?.job?.job_status ||
+    detailBundle?.job?.booking_status ||
+    detailBundle?.job?.status ||
+    rawJob?.job_status ||
+    rawJob?.booking_status ||
+    rawJob?.status ||
+    event.raw?.job_status ||
+    event.raw?.booking_status ||
+    event.raw?.status ||
+    event.status ||
+    "";
+  const normalizedJobStatus = normalizeStatus(jobStatusRaw);
+
+  const isExtraHoursPollingFinal = useMemo(() => {
+    return ["canceled", "completed"].includes(normalizeStatus(jobStatusRaw).key);
+  }, [jobStatusRaw]);
+
   useEffect(() => {
-    if (!pendingExtraHours || !jobId || isFinalStatus) return;
+    if (!pendingExtraHours || !jobId || isExtraHoursPollingFinal) return;
 
     let active = true;
     let inFlight = false;
@@ -1155,28 +1202,10 @@ export default function ClientBookingDetailScreen({
       active = false;
       clearInterval(timer);
     };
-  }, [applyExtraHoursSnapshot, isFinalStatus, jobId, notifyExtraHoursAccepted, pendingExtraHours, refreshJobDetails]);
+  }, [applyExtraHoursSnapshot, isExtraHoursPollingFinal, jobId, notifyExtraHoursAccepted, pendingExtraHours, refreshJobDetails]);
 
   const bookingId = event.bookingId || rawJob?.id || event.job_id || event.id || "#BK-1";
   const apiApplicationStatus = pickApplicationStatus(detailBundle?.applications || []);
-  const resolvedParentDisplayStatus =
-    detailBundle?.job?.parent_display_status ||
-    rawJob?.parent_display_status ||
-    "";
-  const jobStatusRaw =
-    resolvedParentDisplayStatus ||
-    detailBundle?.job?.job_status ||
-    detailBundle?.job?.booking_status ||
-    detailBundle?.job?.status ||
-    rawJob?.job_status ||
-    rawJob?.booking_status ||
-    rawJob?.status ||
-    event.raw?.job_status ||
-    event.raw?.booking_status ||
-    event.raw?.status ||
-    event.status ||
-    "";
-  const normalizedJobStatus = normalizeStatus(jobStatusRaw);
   const statusRaw =
     normalizedJobStatus.key === "completed" || normalizedJobStatus.key === "canceled"
       ? jobStatusRaw
@@ -1815,6 +1844,10 @@ export default function ClientBookingDetailScreen({
       if (Platform.OS === "web") window.alert(successMessage);
       else Alert.alert("Success", successMessage);
     } catch (e: any) {
+      if (isVerificationRequiredApiError(e)) {
+        onRequireVerification?.();
+        return;
+      }
       const message = e?.message || "Unable to update request.";
       if (Platform.OS === "web") window.alert(message);
       else Alert.alert("Request", message);
@@ -1973,6 +2006,7 @@ export default function ClientBookingDetailScreen({
             status: 200,
             message: data?.message || "",
             data,
+            verificationRequired: false,
           };
         } catch (error: any) {
           return {
@@ -1980,12 +2014,18 @@ export default function ClientBookingDetailScreen({
             status: Number(error?.status || 0),
             message: String(error?.message || ""),
             data: error?.payload ?? null,
+            verificationRequired: isVerificationRequiredApiError(error),
           };
         }
       };
 
       const primaryResult = await callUpdate(primaryEndpoint);
       const secondaryResult = primaryResult.ok ? null : await callUpdate(fallbackEndpoint);
+
+      if (primaryResult.verificationRequired || secondaryResult?.verificationRequired) {
+        onRequireVerification?.();
+        return;
+      }
 
       const lateFeeCandidate = [secondaryResult, primaryResult].find(
         (result) => result && result.status === 409 && result.data?.requires_confirmation
@@ -2083,6 +2123,10 @@ export default function ClientBookingDetailScreen({
         );
       }
     } catch (e: any) {
+      if (isVerificationRequiredApiError(e)) {
+        onRequireVerification?.();
+        return;
+      }
       if (Platform.OS === "web") {
         window.alert(e?.message || "Something went wrong.");
       } else {
@@ -2160,6 +2204,10 @@ export default function ClientBookingDetailScreen({
         Alert.alert("Extra Hours", "Request sent to your Syttr.");
       }
     } catch (e: any) {
+      if (isVerificationRequiredApiError(e)) {
+        onRequireVerification?.();
+        return;
+      }
       const message = e?.message || "Unable to send extra hours request.";
       if (Platform.OS === "web") window.alert(message);
       else Alert.alert("Extra Hours", message);

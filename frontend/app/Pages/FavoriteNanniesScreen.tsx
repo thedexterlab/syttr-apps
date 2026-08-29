@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   FlatList,
   Image,
@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { getFavoriteSyttrs, removeFavoriteSyttr } from "../Api";
+import { getFavoriteSyttrs, isVerificationRequiredApiError, removeFavoriteSyttr } from "../Api";
 import { resolveSessionImageUrl } from "../../lib/nannySessionProfile";
 import { hp, rf, rs, wp } from "../utils/responsive";
 
@@ -30,6 +30,7 @@ type Props = {
   navigation?: any;
   onBack?: () => void;
   onOpenProfile?: (nanny: Nanny) => void;
+  onRequireVerification?: () => void;
 };
 
 const FAVORITES_KEY = "favorite_nannies";
@@ -55,14 +56,11 @@ export default function FavoriteNanniesScreen({
   navigation,
   onBack,
   onOpenProfile,
+  onRequireVerification,
 }: Props) {
   const [favorites, setFavorites] = useState<Nanny[]>([]);
 
-  useEffect(() => {
-    loadFavorites();
-  }, []);
-
-  const loadFavorites = async () => {
+  const loadFavorites = useCallback(async () => {
     const [userId, token] = await Promise.all([
       AsyncStorage.getItem("user_id"),
       AsyncStorage.getItem("token"),
@@ -79,7 +77,12 @@ export default function FavoriteNanniesScreen({
       setFavorites(normalized);
       await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(normalized));
       return;
-    } catch {
+    } catch (error) {
+      if (isVerificationRequiredApiError(error)) {
+        setFavorites([]);
+        onRequireVerification?.();
+        return;
+      }
       // fallback to cache
     }
 
@@ -91,7 +94,11 @@ export default function FavoriteNanniesScreen({
     } catch {
       setFavorites([]);
     }
-  };
+  }, [onRequireVerification]);
+
+  useEffect(() => {
+    void loadFavorites();
+  }, [loadFavorites]);
 
   const removeFavorite = async (item: Nanny) => {
     const next = favorites.filter((row) => String(row.id) !== String(item.id));
@@ -113,7 +120,10 @@ export default function FavoriteNanniesScreen({
           token || undefined
         );
       }
-    } catch {
+    } catch (error) {
+      if (isVerificationRequiredApiError(error)) {
+        onRequireVerification?.();
+      }
       // server delete failure is ignored; local cache is already updated
     }
   };

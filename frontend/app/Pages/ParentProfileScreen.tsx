@@ -21,6 +21,7 @@ import {
   apiRequest,
   getClientProfile,
   getSubscriptionStatus,
+  isVerificationRequiredApiError,
   isUserVerifiedFromSources,
   updateClientProfile,
 } from "../Api";
@@ -33,9 +34,10 @@ import { useManageChildStore } from "./manageChildStore";
 
 type Props = {
   navigation?: any;
+  onRequireVerification?: () => void;
 };
 
-export default function ParentProfileScreen({ navigation }: Props) {
+export default function ParentProfileScreen({ navigation, onRequireVerification }: Props) {
   const [name, setName] = useState("Parent User");
   const [email, setEmail] = useState("user@example.com");
   const [phone, setPhone] = useState("");
@@ -57,7 +59,7 @@ export default function ParentProfileScreen({ navigation }: Props) {
   const [showEditModal, setShowEditModal] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
 
-  const { kids, loadChildren } = useManageChildStore();
+  const { kids, loadChildren } = useManageChildStore(onRequireVerification);
   const goToManageChild = () => navigation?.navigate?.("ManageChild");
 
   const resolveProfileImage = (value?: string) => {
@@ -190,8 +192,6 @@ export default function ParentProfileScreen({ navigation }: Props) {
     if (
       status === "verified" ||
       status === "approved" ||
-      status === "completed" ||
-      status === "quickapp-completed" ||
       status.includes("accept")
     ) {
       return "verified";
@@ -199,6 +199,14 @@ export default function ParentProfileScreen({ navigation }: Props) {
     if (
       status === "pending" ||
       status === "app-pending" ||
+      status === "completed" ||
+      status === "quickapp-completed" ||
+      status.includes("background_check") ||
+      status.includes("background check") ||
+      status.includes("admin_approval_pending") ||
+      status.includes("admin approval pending") ||
+      status.includes("payment_required") ||
+      status.includes("payment required") ||
       status.includes("quickapp.created") ||
       status.includes("order.quickapp.completed")
     ) {
@@ -255,7 +263,12 @@ export default function ParentProfileScreen({ navigation }: Props) {
             ...(tokenRaw ? { Authorization: `Bearer ${String(tokenRaw).replace(/"/g, "").trim()}` } : {}),
           },
           body: JSON.stringify({ user_id: String(userId) }),
-        }).catch(() => null);
+        }).catch((error) => {
+          if (isVerificationRequiredApiError(error)) {
+            onRequireVerification?.();
+          }
+          return null;
+        });
         profileVerifiedFlag =
           typeof profileData?.is_verified === "boolean"
             ? profileData.is_verified
@@ -290,7 +303,12 @@ export default function ParentProfileScreen({ navigation }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ user_id: String(userId) }),
-      }).catch(() => null);
+      }).catch((error) => {
+        if (isVerificationRequiredApiError(error)) {
+          onRequireVerification?.();
+        }
+        return null;
+      });
       if (!data?.success) return;
       const orders = Array.isArray(data?.orders) ? data.orders : [];
       const latestOrder = orders[0] || null;
@@ -332,6 +350,10 @@ export default function ParentProfileScreen({ navigation }: Props) {
         await AsyncStorage.setItem("user_verification_status", resolvedStatus);
       }
     } catch (error) {
+      if (isVerificationRequiredApiError(error)) {
+        onRequireVerification?.();
+        return;
+      }
       console.error("fetchTazStatus failed", error);
     }
   };
@@ -628,6 +650,10 @@ export default function ParentProfileScreen({ navigation }: Props) {
       setShowEditModal(false);
       setGenderPickerOpen(false);
     } catch (err: any) {
+      if (isVerificationRequiredApiError(err)) {
+        onRequireVerification?.();
+        return;
+      }
       console.error("saveProfile failed", err);
       Alert.alert("Error", err?.message || "Could not update profile.");
     } finally {
@@ -1303,4 +1329,3 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
-

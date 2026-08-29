@@ -183,6 +183,7 @@ class FavoriteJobController extends Controller
             'end_date' => optional($job->end_date)->format('Y-m-d'),
             'start_time' => (string) $job->start_time,
             'end_time' => (string) ($job->end_time ?? ''),
+            'timezone' => $job->localTimezone(),
             'location' => (string) ($job->location ?? ''),
             'latitude' => $job->latitude !== null ? (float) $job->latitude : null,
             'longitude' => $job->longitude !== null ? (float) $job->longitude : null,

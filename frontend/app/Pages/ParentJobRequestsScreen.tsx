@@ -17,7 +17,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { apiRequest, getRuntimeApiKey, sanitizeToken } from "../Api";
+import { apiRequest, getRuntimeApiKey, isVerificationRequiredApiError, sanitizeToken } from "../Api";
 import { formatDateToMDY } from "../utils/dateFormat";
 import {
   deleteParentRequestNotification,
@@ -41,6 +41,7 @@ type Props = {
   onNotifications?: () => void;
   onCalendar?: () => void;
   onSettings?: () => void;
+  onRequireVerification?: () => void;
 };
 
 export default function ParentJobRequestsScreen({
@@ -52,6 +53,7 @@ export default function ParentJobRequestsScreen({
   onNotifications,
   onCalendar,
   onSettings,
+  onRequireVerification,
 }: Props) {
   const insets = useSafeAreaInsets();
   const bottomBarOffset = -Math.max(insets.bottom, 0);
@@ -75,6 +77,12 @@ export default function ParentJobRequestsScreen({
       setItems(requestsOnly);
       syncRequestCountFromItems(requestsOnly);
     } catch (e: any) {
+      if (isVerificationRequiredApiError(e)) {
+        setItems([]);
+        setRequestCount(0);
+        onRequireVerification?.();
+        return;
+      }
       console.log("Job requests fetch error:", e);
       Alert.alert("Error", e?.message || "Unable to load job requests");
       setItems([]);

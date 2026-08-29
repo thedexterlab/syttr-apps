@@ -21,6 +21,7 @@ let appStateSubscription: { remove: () => void } | null = null;
 let syncingPromise: Promise<void> | null = null;
 let receivedNotificationSubscription: Notifications.EventSubscription | null = null;
 let responseNotificationSubscription: Notifications.EventSubscription | null = null;
+const notificationResponseListeners = new Set<() => void>();
 let reminderHeartbeatInterval: ReturnType<typeof setInterval> | null = null;
 let reminderHeartbeatInFlight: Promise<void> | null = null;
 
@@ -131,7 +132,6 @@ async function ensureNotificationPermissions(): Promise<Notifications.Notificati
       allowAlert: true,
       allowBadge: true,
       allowSound: true,
-      allowAnnouncements: true,
     },
   });
   await AsyncStorage.setItem(PUSH_PERMISSION_STATUS_KEY, requested.status);
@@ -380,15 +380,10 @@ export function bindPushNotificationLifecycle(): void {
   }
   listenersBound = true;
 
-  receivedNotificationSubscription = Notifications.addNotificationReceivedListener(async (notification) => {
-    await AsyncStorage.setItem(
-      LAST_NOTIFICATION_RESPONSE_KEY,
-      JSON.stringify({
-        kind: "received",
-        notification: notification.request.content.data ?? {},
-        receivedAt: new Date().toISOString(),
-      })
-    ).catch(() => {});
+  receivedNotificationSubscription = Notifications.addNotificationReceivedListener(() => {
+    // Foreground delivery is not a navigation intent. Only tap responses should
+    // populate LAST_NOTIFICATION_RESPONSE_KEY, otherwise the app can route from
+    // a notification the user never opened.
   });
 
   responseNotificationSubscription = Notifications.addNotificationResponseReceivedListener(async (response) => {
@@ -401,6 +396,7 @@ export function bindPushNotificationLifecycle(): void {
         respondedAt: new Date().toISOString(),
       })
     ).catch(() => {});
+    notificationResponseListeners.forEach((listener) => listener());
   });
 
   appStateSubscription = AppState.addEventListener("change", (state) => {
@@ -430,6 +426,11 @@ export function unbindPushNotificationLifecycle(): void {
   appStateSubscription = null;
   stopReminderHeartbeat();
   listenersBound = false;
+}
+
+export function subscribeNotificationResponses(listener: () => void): () => void {
+  notificationResponseListeners.add(listener);
+  return () => notificationResponseListeners.delete(listener);
 }
 
 export async function consumeStoredNotificationResponse(): Promise<any | null> {

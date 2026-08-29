@@ -35,13 +35,6 @@ class PushTokenController extends Controller
         $expoPushToken = trim((string) $data['expo_push_token']);
         $deviceId = trim((string) ($data['device_id'] ?? ''));
 
-        UserPushToken::query()
-            ->where('expo_push_token', $expoPushToken)
-            ->where('user_id', '!=', $userId)
-            ->update([
-                'is_active' => false,
-            ]);
-
         $payload = [
             'user_id' => $userId,
             'expo_push_token' => $expoPushToken,
@@ -58,20 +51,21 @@ class PushTokenController extends Controller
             'meta' => is_array($data['meta'] ?? null) ? $data['meta'] : null,
         ];
 
-        $token = UserPushToken::query()->updateOrCreate(
-            $deviceId !== ''
-                ? ['user_id' => $userId, 'device_id' => $deviceId]
-                : ['expo_push_token' => $expoPushToken],
-            $payload
-        );
+        $token = UserPushToken::query()
+            ->where('expo_push_token', $expoPushToken)
+            ->first();
 
-        if ($token->expo_push_token !== $expoPushToken) {
-            $token->forceFill([
-                'expo_push_token' => $expoPushToken,
-                'is_active' => true,
-                'last_seen_at' => now(),
-                'last_registered_at' => now(),
-            ])->save();
+        if (! $token && $deviceId !== '') {
+            $token = UserPushToken::query()
+                ->where('user_id', $userId)
+                ->where('device_id', $deviceId)
+                ->first();
+        }
+
+        if ($token) {
+            $token->fill($payload)->save();
+        } else {
+            $token = UserPushToken::query()->create($payload);
         }
 
         return response()->json([
