@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { RouteProp } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useState } from "react";
@@ -363,7 +363,7 @@ export default function NotificationDetailScreen({ route, navigation, onBack, on
     let canceled = false;
     (async () => {
       try {
-        const storedUserType = String((await AsyncStorage.getItem("user_type")) || "")
+        const storedUserType = String((await AppStorage.getItem("user_type")) || "")
           .trim()
           .toLowerCase();
         if (!canceled) setViewerUserType(storedUserType);
@@ -394,11 +394,11 @@ export default function NotificationDetailScreen({ route, navigation, onBack, on
       try {
         const [tokenRaw, nannyTokenRaw, apiRaw, userIdRaw, nannyIdRaw] =
           await Promise.all([
-            AsyncStorage.getItem("token"),
-            AsyncStorage.getItem("nanny_token"),
-            AsyncStorage.getItem("api_key"),
-            AsyncStorage.getItem("user_id"),
-            AsyncStorage.getItem("nanny_id"),
+            AppStorage.getItem("token"),
+            AppStorage.getItem("nanny_token"),
+            AppStorage.getItem("api_key"),
+            AppStorage.getItem("user_id"),
+            AppStorage.getItem("nanny_id"),
           ]);
         const token = sanitizeToken(tokenRaw || nannyTokenRaw || undefined);
         const apiKey = apiRaw || getRuntimeApiKey() || undefined;
@@ -741,12 +741,12 @@ export default function NotificationDetailScreen({ route, navigation, onBack, on
     try {
       const [tokenRaw, nannyTokenRaw, apiRaw, userTypeRaw, userId, nannyIdRaw] =
         await Promise.all([
-          AsyncStorage.getItem("token"),
-          AsyncStorage.getItem("nanny_token"),
-          AsyncStorage.getItem("api_key"),
-          AsyncStorage.getItem("user_type"),
-          AsyncStorage.getItem("user_id"),
-          AsyncStorage.getItem("nanny_id"),
+          AppStorage.getItem("token"),
+          AppStorage.getItem("nanny_token"),
+          AppStorage.getItem("api_key"),
+          AppStorage.getItem("user_type"),
+          AppStorage.getItem("user_id"),
+          AppStorage.getItem("nanny_id"),
         ]);
       const token = sanitizeToken(tokenRaw || nannyTokenRaw || undefined);
       const apiKey = apiRaw || getRuntimeApiKey() || undefined;
@@ -801,9 +801,9 @@ export default function NotificationDetailScreen({ route, navigation, onBack, on
     appId: string | number
   ) => {
     const [tokenRaw, userId, apiRaw] = await Promise.all([
-      AsyncStorage.getItem("token"),
-      AsyncStorage.getItem("user_id"),
-      AsyncStorage.getItem("api_key"),
+      AppStorage.getItem("token"),
+      AppStorage.getItem("user_id"),
+      AppStorage.getItem("api_key"),
     ]);
     const token = sanitizeToken(tokenRaw || undefined);
     const apiKey = apiRaw || getRuntimeApiKey() || undefined;
@@ -847,11 +847,11 @@ export default function NotificationDetailScreen({ route, navigation, onBack, on
     appId: string | number
   ) => {
     const [tokenRaw, nannyTokenRaw, userId, nannyIdRaw, apiRaw] = await Promise.all([
-      AsyncStorage.getItem("token"),
-      AsyncStorage.getItem("nanny_token"),
-      AsyncStorage.getItem("user_id"),
-      AsyncStorage.getItem("nanny_id"),
-      AsyncStorage.getItem("api_key"),
+      AppStorage.getItem("token"),
+      AppStorage.getItem("nanny_token"),
+      AppStorage.getItem("user_id"),
+      AppStorage.getItem("nanny_id"),
+      AppStorage.getItem("api_key"),
     ]);
     const token = sanitizeToken(tokenRaw || nannyTokenRaw || undefined);
     const nannyId = nannyIdRaw || userId || "";
@@ -897,11 +897,11 @@ export default function NotificationDetailScreen({ route, navigation, onBack, on
 
   const postExtraHoursDecision = async (decision: "accept" | "reject") => {
     const [tokenRaw, nannyTokenRaw, userId, nannyIdRaw, apiRaw] = await Promise.all([
-      AsyncStorage.getItem("token"),
-      AsyncStorage.getItem("nanny_token"),
-      AsyncStorage.getItem("user_id"),
-      AsyncStorage.getItem("nanny_id"),
-      AsyncStorage.getItem("api_key"),
+      AppStorage.getItem("token"),
+      AppStorage.getItem("nanny_token"),
+      AppStorage.getItem("user_id"),
+      AppStorage.getItem("nanny_id"),
+      AppStorage.getItem("api_key"),
     ]);
     const token = sanitizeToken(tokenRaw || nannyTokenRaw || undefined);
     const nannyId = nannyIdRaw || userId || "";

@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { AppState, Platform } from "react-native";
@@ -123,7 +123,7 @@ async function ensureNotificationPermissions(): Promise<Notifications.Notificati
 
   const existing = await Notifications.getPermissionsAsync();
   if (existing.granted || existing.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL) {
-    await AsyncStorage.setItem(PUSH_PERMISSION_STATUS_KEY, existing.status);
+    await AppStorage.setItem(PUSH_PERMISSION_STATUS_KEY, existing.status);
     return existing;
   }
 
@@ -134,21 +134,21 @@ async function ensureNotificationPermissions(): Promise<Notifications.Notificati
       allowSound: true,
     },
   });
-  await AsyncStorage.setItem(PUSH_PERMISSION_STATUS_KEY, requested.status);
+  await AppStorage.setItem(PUSH_PERMISSION_STATUS_KEY, requested.status);
   return requested;
 }
 
 async function getOrCreateDeviceId(): Promise<string> {
-  const existing = String((await AsyncStorage.getItem(PUSH_DEVICE_ID_KEY)) || "").trim();
+  const existing = String((await AppStorage.getItem(PUSH_DEVICE_ID_KEY)) || "").trim();
   if (existing) return existing;
 
   const generated = `device-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-  await AsyncStorage.setItem(PUSH_DEVICE_ID_KEY, generated);
+  await AppStorage.setItem(PUSH_DEVICE_ID_KEY, generated);
   return generated;
 }
 
 async function getCurrentSessionUserId(): Promise<string> {
-  const [[, userType], [, userId], [, nannyId]] = await AsyncStorage.multiGet([
+  const [[, userType], [, userId], [, nannyId]] = await AppStorage.multiGet([
     "user_type",
     "user_id",
     "nanny_id",
@@ -216,7 +216,7 @@ export async function getExpoPushTokenForCurrentDevice(): Promise<string | null>
     return null;
   }
 
-  await AsyncStorage.setItem(PUSH_TOKEN_KEY, expoPushToken);
+  await AppStorage.setItem(PUSH_TOKEN_KEY, expoPushToken);
   return expoPushToken;
 }
 
@@ -230,7 +230,7 @@ export async function syncPushRegistration(force = false): Promise<void> {
   }
 
   syncingPromise = (async () => {
-    const [[, authToken], [, storedPushToken], [, lastSyncedUserId]] = await AsyncStorage.multiGet([
+    const [[, authToken], [, storedPushToken], [, lastSyncedUserId]] = await AppStorage.multiGet([
       "token",
       PUSH_TOKEN_KEY,
       PUSH_LAST_SYNCED_USER_KEY,
@@ -270,7 +270,7 @@ export async function syncPushRegistration(force = false): Promise<void> {
       }
       throw error;
     }
-    await AsyncStorage.multiSet([
+    await AppStorage.multiSet([
       [PUSH_TOKEN_KEY, expoPushToken],
       [PUSH_LAST_SYNCED_USER_KEY, userId],
     ]);
@@ -284,7 +284,7 @@ export async function syncPushRegistration(force = false): Promise<void> {
 }
 
 export async function unregisterDevicePushToken(): Promise<void> {
-  const [[, authToken], [, expoPushToken], [, deviceId]] = await AsyncStorage.multiGet([
+  const [[, authToken], [, expoPushToken], [, deviceId]] = await AppStorage.multiGet([
     "token",
     PUSH_TOKEN_KEY,
     PUSH_DEVICE_ID_KEY,
@@ -308,11 +308,11 @@ export async function unregisterDevicePushToken(): Promise<void> {
     });
   }
 
-  await AsyncStorage.multiRemove([PUSH_TOKEN_KEY, PUSH_LAST_SYNCED_USER_KEY]);
+  await AppStorage.multiRemove([PUSH_TOKEN_KEY, PUSH_LAST_SYNCED_USER_KEY]);
 }
 
 export async function rebindPushRegistrationForCurrentSession(): Promise<void> {
-  await AsyncStorage.removeItem(PUSH_LAST_SYNCED_USER_KEY).catch(() => {});
+  await AppStorage.removeItem(PUSH_LAST_SYNCED_USER_KEY).catch(() => {});
   await syncPushRegistration(true);
 }
 
@@ -330,7 +330,7 @@ async function runReminderHeartbeat(force = false): Promise<void> {
   }
 
   reminderHeartbeatInFlight = (async () => {
-    const [[, token], [, nannyToken]] = await AsyncStorage.multiGet(["token", "nanny_token"]);
+    const [[, token], [, nannyToken]] = await AppStorage.multiGet(["token", "nanny_token"]);
     const cleanToken = sanitizeToken(String(token || nannyToken || "").trim());
     const currentUserId = await getCurrentSessionUserId();
 
@@ -387,7 +387,7 @@ export function bindPushNotificationLifecycle(): void {
   });
 
   responseNotificationSubscription = Notifications.addNotificationResponseReceivedListener(async (response) => {
-    await AsyncStorage.setItem(
+    await AppStorage.setItem(
       LAST_NOTIFICATION_RESPONSE_KEY,
       JSON.stringify({
         kind: "response",
@@ -435,9 +435,9 @@ export function subscribeNotificationResponses(listener: () => void): () => void
 
 export async function consumeStoredNotificationResponse(): Promise<any | null> {
   try {
-    const raw = await AsyncStorage.getItem(LAST_NOTIFICATION_RESPONSE_KEY);
+    const raw = await AppStorage.getItem(LAST_NOTIFICATION_RESPONSE_KEY);
     if (!raw) return null;
-    await AsyncStorage.removeItem(LAST_NOTIFICATION_RESPONSE_KEY).catch(() => {});
+    await AppStorage.removeItem(LAST_NOTIFICATION_RESPONSE_KEY).catch(() => {});
     return JSON.parse(raw);
   } catch {
     return null;

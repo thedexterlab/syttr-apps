@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -168,7 +168,6 @@ const CreateClientProfileScreen: React.FC<Props> = ({
   const [city, setCity] = useState("");
   const [gender, setGender] = useState("");
   const [kids, setKids] = useState("");
-  const [referral, setReferral] = useState("");
   const [about, setAbout] = useState("");
   const [profileImage, setProfileImage] = useState<ProfileImage | null>(null);
   const [loading, setLoading] = useState(false);
@@ -228,9 +227,9 @@ const CreateClientProfileScreen: React.FC<Props> = ({
     (async () => {
       try {
         const [storedName, storedEmail, draftRaw] = await Promise.all([
-          AsyncStorage.getItem(STORAGE_KEYS.userName),
-          AsyncStorage.getItem(STORAGE_KEYS.userEmail),
-          AsyncStorage.getItem(STORAGE_KEYS.signupClientDraft),
+          AppStorage.getItem(STORAGE_KEYS.userName),
+          AppStorage.getItem(STORAGE_KEYS.userEmail),
+          AppStorage.getItem(STORAGE_KEYS.signupClientDraft),
         ]);
         if (!cancelled && storedName) {
           applyPrefillName(String(storedName).trim());
@@ -373,12 +372,12 @@ const CreateClientProfileScreen: React.FC<Props> = ({
     return country || "";
   };
 
-  const selectedCountryCode = (value?: string | null) => {
+  const selectedCountryCode = useCallback((value?: string | null) => {
     const normalized = String(value || "").trim().toLowerCase();
     if (normalized.includes("united states") || normalized === "usa") return "us";
     if (normalized.includes("canada")) return "ca";
     return "";
-  };
+  }, []);
 
   const formatAddressLine = (
     street?: string,
@@ -411,7 +410,7 @@ const CreateClientProfileScreen: React.FC<Props> = ({
     return Boolean(finalAddress || nextCountry);
   };
 
-  const fetchLocationSuggestions = async (
+  const fetchLocationSuggestions = useCallback(async (
     query: string,
     countryText?: string
   ): Promise<LocationSuggestion[]> => {
@@ -467,7 +466,7 @@ const CreateClientProfileScreen: React.FC<Props> = ({
     } catch {
       return [];
     }
-  };
+  }, [availableStates, selectedCountryCode, state]);
 
   const fetchLocationDetails = async (placeId: string) => {
     if (!GOOGLE_MAPS_KEY || !placeId) return null;
@@ -564,7 +563,7 @@ const CreateClientProfileScreen: React.FC<Props> = ({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [city, country, state, availableStates, showLocationSuggestions]);
+  }, [city, country, fetchLocationSuggestions, showLocationSuggestions]);
 
   const fetchNativeReverseAddress = async (latitude: number, longitude: number) => {
     try {
@@ -785,13 +784,13 @@ const CreateClientProfileScreen: React.FC<Props> = ({
 
     setLoading(true);
     try {
-      let token = await AsyncStorage.getItem(STORAGE_KEYS.token);
+      let token = await AppStorage.getItem(STORAGE_KEYS.token);
       let userId =
-        (await AsyncStorage.getItem(STORAGE_KEYS.userId)) ||
-        (await AsyncStorage.getItem(STORAGE_KEYS.legacyId));
-      const storedEmail = ((await AsyncStorage.getItem(STORAGE_KEYS.userEmail)) || "").trim().toLowerCase();
+        (await AppStorage.getItem(STORAGE_KEYS.userId)) ||
+        (await AppStorage.getItem(STORAGE_KEYS.legacyId));
+      const storedEmail = ((await AppStorage.getItem(STORAGE_KEYS.userEmail)) || "").trim().toLowerCase();
       const activeSignup = signupMeta || signupData;
-      const draftRaw = await AsyncStorage.getItem(STORAGE_KEYS.signupClientDraft);
+      const draftRaw = await AppStorage.getItem(STORAGE_KEYS.signupClientDraft);
       let draft: any = null;
       try {
         draft = draftRaw ? JSON.parse(draftRaw) : null;
@@ -813,7 +812,7 @@ const CreateClientProfileScreen: React.FC<Props> = ({
 
       if (userId && draftEmail && draftEmail !== storedEmail) {
         // Signup email changed, so the previous session is stale and must not be reused.
-        await AsyncStorage.multiRemove([
+        await AppStorage.multiRemove([
           STORAGE_KEYS.token,
           STORAGE_KEYS.userId,
           STORAGE_KEYS.legacyId,
@@ -903,10 +902,10 @@ const CreateClientProfileScreen: React.FC<Props> = ({
           throw new Error("Signup completed but user_id was not returned.");
         }
 
-        if (token) await AsyncStorage.setItem(STORAGE_KEYS.token, token);
-        await AsyncStorage.setItem(STORAGE_KEYS.userId, userId);
-        await AsyncStorage.setItem(STORAGE_KEYS.userEmail, bootstrapEmail);
-        await AsyncStorage.setItem(STORAGE_KEYS.userName, bootstrapName);
+        if (token) await AppStorage.setItem(STORAGE_KEYS.token, token);
+        await AppStorage.setItem(STORAGE_KEYS.userId, userId);
+        await AppStorage.setItem(STORAGE_KEYS.userEmail, bootstrapEmail);
+        await AppStorage.setItem(STORAGE_KEYS.userName, bootstrapName);
       }
       const submitProfile = async (authToken?: string | null, uid?: string | null) =>
         updateClientProfile(
@@ -943,8 +942,8 @@ const CreateClientProfileScreen: React.FC<Props> = ({
           freshToken = resolveAuthToken(loginResp) || freshToken;
           freshUserId = resolveAuthUserId(loginResp) || freshUserId;
         }
-        if (freshToken) await AsyncStorage.setItem(STORAGE_KEYS.token, freshToken);
-        if (freshUserId) await AsyncStorage.setItem(STORAGE_KEYS.userId, freshUserId);
+        if (freshToken) await AppStorage.setItem(STORAGE_KEYS.token, freshToken);
+        if (freshUserId) await AppStorage.setItem(STORAGE_KEYS.userId, freshUserId);
 
         result = await submitProfile(freshToken, freshUserId);
       }
@@ -974,9 +973,9 @@ const CreateClientProfileScreen: React.FC<Props> = ({
       if (derivedToken) {
         storagePairs.push(["token", String(derivedToken)]);
       }
-      await AsyncStorage.multiSet(storagePairs);
-      await AsyncStorage.removeItem(STORAGE_KEYS.signupClientDraft);
-      await AsyncStorage.multiRemove([
+      await AppStorage.multiSet(storagePairs);
+      await AppStorage.removeItem(STORAGE_KEYS.signupClientDraft);
+      await AppStorage.multiRemove([
         "nanny_id",
         "nanny_name",
         "nanny_email",
@@ -999,7 +998,7 @@ const CreateClientProfileScreen: React.FC<Props> = ({
       onNext?.();
       onSuccess?.();
     } catch (err: any) {
-      // eslint-disable-next-line no-console
+       
       console.error("[CreateClientProfile] submit failed", err);
       const msg = String(err?.message || "");
       const lowerMsg = msg.toLowerCase();
@@ -1007,7 +1006,7 @@ const CreateClientProfileScreen: React.FC<Props> = ({
         (lowerMsg.includes("user_id") && lowerMsg.includes("invalid")) ||
         lowerMsg.includes("selected user id is invalid");
       if (invalidUserId) {
-        await AsyncStorage.multiRemove([
+        await AppStorage.multiRemove([
           STORAGE_KEYS.token,
           STORAGE_KEYS.userId,
           STORAGE_KEYS.legacyId,
@@ -1017,7 +1016,7 @@ const CreateClientProfileScreen: React.FC<Props> = ({
       }
       if (msg.toLowerCase().includes("ghl contact not found")) {
         // Backend CRM contact sync issue should not block onboarding flow.
-        await AsyncStorage.multiSet([
+        await AppStorage.multiSet([
           ["user_name", `${firstName.trim()} ${lastName.trim()}`.trim()],
           ["user_email", (email.trim().toLowerCase() || "").trim()],
           ["user_phone", phone.trim()],

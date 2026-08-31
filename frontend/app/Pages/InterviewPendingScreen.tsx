@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -59,7 +59,7 @@ const InterviewPendingScreen: React.FC<Props> = ({ onBack, onDone, onRejected })
       intervalRef.current = null;
     }
     try {
-      await AsyncStorage.setItem(APPROVAL_STATUS_KEY, state);
+      await AppStorage.setItem(APPROVAL_STATUS_KEY, state);
     } catch {
       // ignore persistence errors
     }
@@ -71,7 +71,7 @@ const InterviewPendingScreen: React.FC<Props> = ({ onBack, onDone, onRejected })
 
     const hydrateSavedStatus = async () => {
       try {
-        const saved = await AsyncStorage.getItem(APPROVAL_STATUS_KEY);
+        const saved = await AppStorage.getItem(APPROVAL_STATUS_KEY);
         if (!isActive) return;
         if (saved === "approved") {
           setApprovalState("approved");
@@ -87,12 +87,12 @@ const InterviewPendingScreen: React.FC<Props> = ({ onBack, onDone, onRejected })
 
     const pollStatus = async () => {
       try {
-        const token = await AsyncStorage.getItem("token");
+        const token = await AppStorage.getItem("token");
         const apiKey =
-          (await AsyncStorage.getItem("api_key")) ||
+          (await AppStorage.getItem("api_key")) ||
           (typeof process !== "undefined" ? process.env?.EXPO_PUBLIC_API_KEY : undefined) ||
           undefined;
-        const nannyId = await AsyncStorage.getItem("nanny_id");
+        const nannyId = await AppStorage.getItem("nanny_id");
         if (!nannyId) return;
         const res: any = await checkNannyApprovalStatus(
           { nanny_id: nannyId },
@@ -162,10 +162,10 @@ const InterviewPendingScreen: React.FC<Props> = ({ onBack, onDone, onRejected })
 
     try {
       setGettingNewLink(true);
-      const nannyId = String((await AsyncStorage.getItem("nanny_id")) || "").trim();
-      const token = sanitizeToken((await AsyncStorage.getItem("token")) || undefined);
+      const nannyId = String((await AppStorage.getItem("nanny_id")) || "").trim();
+      const token = sanitizeToken((await AppStorage.getItem("token")) || undefined);
       const apiKey =
-        (await AsyncStorage.getItem("api_key")) ||
+        (await AppStorage.getItem("api_key")) ||
         getRuntimeApiKey() ||
         undefined;
       if (!nannyId) {
@@ -206,9 +206,9 @@ const InterviewPendingScreen: React.FC<Props> = ({ onBack, onDone, onRejected })
         return;
       }
 
-      await AsyncStorage.setItem("taz_quickapp_link", nextQuickappLink);
+      await AppStorage.setItem("taz_quickapp_link", nextQuickappLink);
       if (data?.taz_order_guid) {
-        await AsyncStorage.setItem("taz_order_guid", String(data.taz_order_guid));
+        await AppStorage.setItem("taz_order_guid", String(data.taz_order_guid));
       }
       router.push({ pathname: "/background-check" as any, params: { url: nextQuickappLink } });
     } catch (e: any) {

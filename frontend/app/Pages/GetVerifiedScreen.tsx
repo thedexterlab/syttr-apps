@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -23,12 +24,6 @@ import {
 import SafeScreen from "../_utils/SafeScreen";
 import { rf, rs } from "../utils/responsive";
 import VerificationOneTimePayment from "../../lib/VerificationOneTimePayment";
-
-// Conditionally import DateTimePicker only for native platforms
-let DateTimePicker: any = null;
-if (Platform.OS !== 'web') {
-  DateTimePicker = require('@react-native-community/datetimepicker').default;
-}
 
 type Props = {
   navigation?: any;
@@ -161,7 +156,7 @@ const normalizeVerificationStatus = (status?: string | null) => {
 };
 
 const getStoredUserData = async () => {
-  const entries = await AsyncStorage.multiGet([
+  const entries = await AppStorage.multiGet([
     STORAGE_KEYS.userType,
     STORAGE_KEYS.token,
     STORAGE_KEYS.nannyId,
@@ -217,7 +212,7 @@ export default function GetVerifiedScreen({
     let active = true;
     (async () => {
       try {
-        const type = ((await AsyncStorage.getItem("user_type")) || "client").toLowerCase();
+        const type = ((await AppStorage.getItem("user_type")) || "client").toLowerCase();
         if (active) setUserType(type);
         const role = type === "nanny" || type === "syttr" ? "syttr" : "parent";
         const feeResponse = await fetch(`${BASE_URL}verification/config?role=${role}`);
@@ -227,7 +222,7 @@ export default function GetVerifiedScreen({
           setConfiguredVerificationFee(fee);
         }
         const dobKey = type === "nanny" ? "nanny_dob" : "user_dob";
-        const storedDob = await AsyncStorage.getItem(dobKey);
+        const storedDob = await AppStorage.getItem(dobKey);
         if (active && storedDob) {
           const normalized = normalizeIsoDate(storedDob);
           if (normalized) {
@@ -263,7 +258,7 @@ export default function GetVerifiedScreen({
     router.push({ pathname: "/background-check" as any, params: { url: link } });
   };
 
-  const fetchTazStatus = async () => {
+  const fetchTazStatus = useCallback(async () => {
     try {
       const { isNanny, id, token } = await getStoredUserData();
       if (!id) return null;
@@ -341,15 +336,15 @@ export default function GetVerifiedScreen({
       setHasExistingVerification(verificationExists);
       if (nextQuickappLink) {
         setQuickappLink(nextQuickappLink);
-        await AsyncStorage.setItem("taz_quickapp_link", nextQuickappLink);
+        await AppStorage.setItem("taz_quickapp_link", nextQuickappLink);
       } else {
         setQuickappLink(null);
-        await AsyncStorage.removeItem("taz_quickapp_link");
+        await AppStorage.removeItem("taz_quickapp_link");
       }
       if (isNanny && paymentCompleted === true) {
-        await AsyncStorage.setItem(VERIFICATION_PAYMENT_DONE_KEY, "true");
+        await AppStorage.setItem(VERIFICATION_PAYMENT_DONE_KEY, "true");
       } else if (isNanny && paymentCompleted === false) {
-        await AsyncStorage.removeItem(VERIFICATION_PAYMENT_DONE_KEY);
+        await AppStorage.removeItem(VERIFICATION_PAYMENT_DONE_KEY);
       }
 
       const shouldAdvanceToReview =
@@ -375,7 +370,7 @@ export default function GetVerifiedScreen({
     } catch {
       return null;
     }
-  };
+  }, [onNext, onRejected]);
 
   const normalizedTazStatus = normalizeVerificationStatus(tazStatus);
   const isPending = normalizedTazStatus === "app-pending";
@@ -396,7 +391,7 @@ export default function GetVerifiedScreen({
         await onLogout();
       }
     } finally {
-      await AsyncStorage.clear();
+      await AppStorage.clear();
       if (navigation?.reset) {
         navigation.reset({ index: 0, routes: [{ name: "Login" }] });
       }
@@ -432,10 +427,10 @@ export default function GetVerifiedScreen({
       }
 
       if (data?.taz_order_guid) {
-        await AsyncStorage.setItem("taz_order_guid", String(data.taz_order_guid));
+        await AppStorage.setItem("taz_order_guid", String(data.taz_order_guid));
       }
       if (data?.quickapp_link) {
-        await AsyncStorage.setItem("taz_quickapp_link", String(data.quickapp_link));
+        await AppStorage.setItem("taz_quickapp_link", String(data.quickapp_link));
         setQuickappLink(String(data.quickapp_link));
       }
     } catch (e: any) {
@@ -499,7 +494,6 @@ export default function GetVerifiedScreen({
           !email ? "email" : null,
           !name ? "name" : null,
         ].filter(Boolean);
-        console.log("[GetVerified] Missing fields:", missing.join(", "));
         Alert.alert("Missing info", `Missing: ${missing.join(", ")}`);
         return { success: false, orderFound: false, quickappLink: "" };
       }
@@ -546,8 +540,6 @@ export default function GetVerifiedScreen({
         payload.date_of_birth = normalizedDob;
       }
 
-      console.log("[GetVerified] Payload", payload);
-
       const { response: resp, raw, data: initialData } = await fetchApiWithFallback(
         "taz/create-order",
         {
@@ -561,8 +553,6 @@ export default function GetVerifiedScreen({
         }
       );
       let data: any = initialData;
-      console.log("[GetVerified] Response", resp.status, raw);
-
       if (!resp.ok || !data?.success) {
         const statusLabel = resp.ok ? "" : ` (${resp.status})`;
         const backendCode = String(data?.code || "").trim().toLowerCase();
@@ -594,8 +584,6 @@ export default function GetVerifiedScreen({
           return { success: false, orderFound: false, quickappLink: "" };
         }
 
-        console.log("[GetVerified] create-order failed, trying regenerate-link");
-
         const {
           response: regenResp,
           raw: regenRaw,
@@ -621,8 +609,6 @@ export default function GetVerifiedScreen({
           regenCode === "taz_permissible_purpose_required" ||
           regenMessage.toLowerCase().includes("permissible purpose") ||
           regenMessage.toLowerCase().includes("quickapp order");
-
-        console.log("[GetVerified] regenerate-link response", regenResp.status, regenRaw);
 
         if (!regenResp.ok || !regenData?.success) {
           if (regenUnauthorized) {
@@ -652,10 +638,10 @@ export default function GetVerifiedScreen({
       }
 
       if (data?.taz_order_guid) {
-        await AsyncStorage.setItem("taz_order_guid", String(data.taz_order_guid));
+        await AppStorage.setItem("taz_order_guid", String(data.taz_order_guid));
       }
       if (data?.quickapp_link) {
-        await AsyncStorage.setItem("taz_quickapp_link", String(data.quickapp_link));
+        await AppStorage.setItem("taz_quickapp_link", String(data.quickapp_link));
       }
 
       const nextQuickappLink = String(data?.quickapp_link || "").trim();
@@ -704,13 +690,13 @@ export default function GetVerifiedScreen({
     await handleRegenerate();
   };
 
-  const hasStoredPaymentMethod = async () => {
+  const hasStoredPaymentMethod = useCallback(async () => {
     try {
-      const localPaymentDone = await AsyncStorage.getItem(VERIFICATION_PAYMENT_DONE_KEY);
+      const localPaymentDone = await AppStorage.getItem(VERIFICATION_PAYMENT_DONE_KEY);
       if (String(localPaymentDone || "").toLowerCase() === "true") {
         return true;
       }
-      const rawToken = await AsyncStorage.getItem("token");
+      const rawToken = await AppStorage.getItem("token");
       const token = sanitizeToken(rawToken || undefined);
       const res = await fetch(`${BASE_URL}payment-method`, {
         headers: {
@@ -724,9 +710,9 @@ export default function GetVerifiedScreen({
     } catch {
       return false;
     }
-  };
+  }, []);
 
-  const refreshSavedPaymentMethod = async () => {
+  const refreshSavedPaymentMethod = useCallback(async () => {
     try {
       setCheckingSavedPaymentMethod(true);
       const hasMethod = await hasStoredPaymentMethod();
@@ -735,7 +721,7 @@ export default function GetVerifiedScreen({
     } finally {
       setCheckingSavedPaymentMethod(false);
     }
-  };
+  }, [hasStoredPaymentMethod]);
 
   const chargeVerification = async (options?: { stripePaymentMethodId?: string }) => {
     if (paying) return;
@@ -743,7 +729,7 @@ export default function GetVerifiedScreen({
     try {
       setPaying(true);
       const { id } = await getStoredUserData();
-      const rawToken = await AsyncStorage.getItem("token");
+      const rawToken = await AppStorage.getItem("token");
       const token = sanitizeToken(rawToken || undefined);
       const amount = Number(verificationFee.toFixed(2));
       const directStripePaymentMethodId = String(options?.stripePaymentMethodId || "").trim();
@@ -795,7 +781,7 @@ export default function GetVerifiedScreen({
       if (paymentRes.status === 409) {
         const conflictMessage = String(paymentJson?.message || "").toLowerCase();
         if (conflictMessage.includes("already completed")) {
-          await AsyncStorage.setItem(VERIFICATION_PAYMENT_DONE_KEY, "true");
+          await AppStorage.setItem(VERIFICATION_PAYMENT_DONE_KEY, "true");
           return true;
         }
       }
@@ -803,8 +789,8 @@ export default function GetVerifiedScreen({
         throw new Error(paymentJson?.message || "Payment failed.");
       }
 
-      await AsyncStorage.setItem(VERIFICATION_PAYMENT_DONE_KEY, "true");
-      await AsyncStorage.setItem("user_verification_status", "pending");
+      await AppStorage.setItem(VERIFICATION_PAYMENT_DONE_KEY, "true");
+      await AppStorage.setItem("user_verification_status", "pending");
       return true;
     } catch (e: any) {
       Alert.alert("Payment failed", e?.message || "Unable to process payment.");
@@ -871,7 +857,7 @@ export default function GetVerifiedScreen({
         ? latest.orderFound
         : hasExistingVerification;
     const paymentAlreadyDone =
-      String((await AsyncStorage.getItem(VERIFICATION_PAYMENT_DONE_KEY)) || "").toLowerCase() ===
+      String((await AppStorage.getItem(VERIFICATION_PAYMENT_DONE_KEY)) || "").toLowerCase() ===
       "true";
 
     if (latestOrderFound || latestQuickappLink || ["app-pending", "completed", "failed"].includes(latestStatus)) {
@@ -926,7 +912,7 @@ export default function GetVerifiedScreen({
   useEffect(() => {
     void fetchTazStatus();
     void refreshSavedPaymentMethod();
-  }, []);
+  }, [fetchTazStatus, refreshSavedPaymentMethod]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -941,7 +927,7 @@ export default function GetVerifiedScreen({
       clearInterval(interval);
       sub.remove();
     };
-  }, []);
+  }, [fetchTazStatus, refreshSavedPaymentMethod]);
 
   const isNannyUser = userType === "nanny" || userType === "syttr";
   const verificationFee = configuredVerificationFee;

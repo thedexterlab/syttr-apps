@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { apiRequest, BASE_URL, GOOGLE_MAPS_KEY, isVerificationRequiredApiError, sanitizeToken } from "../Api";
 import { geocodeAddress } from "../utils/geocodeAddress";
 import { Location } from "../utils/safeLocation";
@@ -102,7 +102,7 @@ const buildMonthDays = (monthDate: Date) => {
   const daysInMonth = lastOfMonth.getDate();
   const startWeekday = firstOfMonth.getDay();
 
-  const days: Array<{ date: Date | null; key: string }> = [];
+  const days: { date: Date | null; key: string }[] = [];
   for (let i = 0; i < startWeekday; i += 1) {
     days.push({ date: null, key: `pad-${month}-${i}` });
   }
@@ -220,7 +220,7 @@ const normalizeAddressPart = (value: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-const dedupeAddressParts = (parts: Array<string | null | undefined>) => {
+const dedupeAddressParts = (parts: (string | null | undefined)[]) => {
   const dedupedRaw: string[] = [];
   const dedupedNorm: string[] = [];
 
@@ -257,7 +257,7 @@ const looksLikePublicUserId = (value?: string | null) => {
   const raw = cleanStoredValue(value).toUpperCase();
   return raw.length >= 5 && /[A-Z]/.test(raw) && /\d/.test(raw);
 };
-const pickBestUserId = (candidates: Array<string | null | undefined>) => {
+const pickBestUserId = (candidates: (string | null | undefined)[]) => {
   for (const candidate of candidates) {
     if (looksLikePublicUserId(candidate)) {
       return cleanStoredValue(candidate).toUpperCase();
@@ -466,7 +466,7 @@ export default function PostJobScreen({
   };
 
   const isParentVerified = async () => {
-    const raw = await AsyncStorage.getItem("user_verification_status");
+    const raw = await AppStorage.getItem("user_verification_status");
     const val = (raw || "").toLowerCase().trim();
     return (
       val === "verified" ||
@@ -476,12 +476,12 @@ export default function PostJobScreen({
 
   const getAuthContext = async () => {
     const [tokenRaw, apiKeyStored, userIdStored, fallbackUserId, userEmailStored, nannyEmailStored] = await Promise.all([
-      AsyncStorage.getItem("token"),
-      AsyncStorage.getItem("api_key"),
-      AsyncStorage.getItem("user_id"),
-      AsyncStorage.getItem("id"),
-      AsyncStorage.getItem("user_email"),
-      AsyncStorage.getItem("nanny_email"),
+      AppStorage.getItem("token"),
+      AppStorage.getItem("api_key"),
+      AppStorage.getItem("user_id"),
+      AppStorage.getItem("id"),
+      AppStorage.getItem("user_email"),
+      AppStorage.getItem("nanny_email"),
     ]);
     const token = sanitizeToken(tokenRaw || undefined);
 
@@ -496,7 +496,7 @@ export default function PostJobScreen({
     if (resolvedUserId && looksLikePublicUserId(resolvedUserId)) {
       const normalizedStoredUserId = cleanStoredValue(userIdStored).toUpperCase();
       if (normalizedStoredUserId !== resolvedUserId) {
-        await AsyncStorage.setItem("user_id", resolvedUserId);
+        await AppStorage.setItem("user_id", resolvedUserId);
       }
     }
 
@@ -604,9 +604,9 @@ export default function PostJobScreen({
           }
         }
 
-        const storedLabel = await AsyncStorage.getItem("last_location_label");
-        const storedLat = await AsyncStorage.getItem("last_location_lat");
-        const storedLon = await AsyncStorage.getItem("last_location_lon");
+        const storedLabel = await AppStorage.getItem("last_location_label");
+        const storedLat = await AppStorage.getItem("last_location_lat");
+        const storedLon = await AppStorage.getItem("last_location_lon");
 
         if (storedLabel) nextLabel = nextLabel ?? sanitizeLocationLabel(storedLabel);
         if (storedLat && !Number.isNaN(Number(storedLat))) nextLat = Number(storedLat);
@@ -650,7 +650,7 @@ export default function PostJobScreen({
             }
 
             nextLabel = sanitizeLocationLabel(derivedLabel);
-            await AsyncStorage.multiSet([
+            await AppStorage.multiSet([
               ["last_location_label", nextLabel],
               ["last_location_lat", String(nextLat)],
               ["last_location_lon", String(nextLon)],
@@ -736,15 +736,15 @@ export default function PostJobScreen({
   const persistLocation = async (label: string, lat?: number | null, lon?: number | null) => {
     const trimmed = sanitizeLocationLabel(label || "");
     if (!trimmed) return;
-    const pairs: Array<[string, string]> = [["last_location_label", trimmed]];
+    const pairs: [string, string][] = [["last_location_label", trimmed]];
     try {
       if (Number.isFinite(lat) && Number.isFinite(lon)) {
         pairs.push(["last_location_lat", String(lat)]);
         pairs.push(["last_location_lon", String(lon)]);
-        await AsyncStorage.multiSet(pairs);
+        await AppStorage.multiSet(pairs);
       } else {
-        await AsyncStorage.multiSet(pairs);
-        await AsyncStorage.multiRemove(["last_location_lat", "last_location_lon"]);
+        await AppStorage.multiSet(pairs);
+        await AppStorage.multiRemove(["last_location_lat", "last_location_lon"]);
       }
     } catch {
       // ignore storage failures

@@ -1,14 +1,13 @@
 import AppLogo from "../_utils/AppLogo";
 import { Fonts } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import * as Notifications from "expo-notifications";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -26,8 +25,6 @@ import { rebindPushRegistrationForCurrentSession } from "../../lib/pushNotificat
 import { Location } from "../_utils/safeLocation";
 import { rf, rs, wp } from "../_utils/responsive";
 import SafeScreen from "../_utils/SafeScreen";
-import { isGoogleAuthAvailable, useGoogleAuthRequest } from "../_utils/safeAuthSessionGoogle";
-import { WebBrowser } from "../_utils/safeWebBrowser";
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const palette = {
@@ -93,94 +90,6 @@ type Props = {
   onNannyRejected?: () => void;
 };
 
-type GoogleAuthButtonProps = {
-  autoPrompt?: boolean;
-  disabled?: boolean;
-  onAccessToken: (token: string) => void;
-  onError: (message: string) => void;
-  onPromptStateChange?: (loading: boolean) => void;
-  onAutoPromptConsumed?: () => void;
-};
-
-const GoogleAuthButton: React.FC<GoogleAuthButtonProps> = ({
-  autoPrompt,
-  disabled,
-  onAccessToken,
-  onError,
-  onPromptStateChange,
-  onAutoPromptConsumed,
-}) => {
-  useEffect(() => {
-    try {
-      WebBrowser.maybeCompleteAuthSession();
-    } catch {
-      // ignore if the module isn't available
-    }
-  }, []);
-
-  const [request, response, promptAsync] = useGoogleAuthRequest({
-    androidClientId:
-      "409629659232-qk7mrp6vldfg5u1mhih2ipmeq1coe50u.apps.googleusercontent.com",
-    expoClientId:
-      "409629659232-qk7mrp6vldfg5u1mhih2ipmeq1coe50u.apps.googleusercontent.com",
-  });
-
-  const handlePrompt = useCallback(async () => {
-    if (!request || disabled) return;
-    onPromptStateChange?.(true);
-    try {
-      const result = await promptAsync();
-      if (result?.type !== "success") {
-        if (result?.type === "error") {
-          onError(result?.error?.message || "Google sign-in failed");
-        }
-        onPromptStateChange?.(false);
-      }
-    } catch (err: any) {
-      onPromptStateChange?.(false);
-      onError(err?.message || "Google sign-in failed");
-    }
-  }, [disabled, onError, onPromptStateChange, promptAsync, request]);
-
-  useEffect(() => {
-    if (autoPrompt && request) {
-      onAutoPromptConsumed?.();
-      handlePrompt();
-    }
-  }, [autoPrompt, handlePrompt, onAutoPromptConsumed, request]);
-
-  useEffect(() => {
-    if (!response) return;
-    if (response.type === "success" && response.authentication?.accessToken) {
-      onAccessToken(response.authentication.accessToken);
-      return;
-    }
-    if (response.type === "error") {
-      onPromptStateChange?.(false);
-      onError(response.error?.message || "Google sign-in failed");
-      return;
-    }
-    if (response.type === "dismiss" || response.type === "cancel") {
-      onPromptStateChange?.(false);
-    }
-  }, [onAccessToken, onError, onPromptStateChange, response]);
-
-  return (
-    <TouchableOpacity
-      style={[styles.googleButton, (disabled || !request) && { opacity: 0.7 }]}
-      onPress={handlePrompt}
-      disabled={disabled || !request}
-      activeOpacity={0.85}
-    >
-      <Image
-        source={{ uri: "https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" }}
-        style={styles.googleIcon}
-      />
-      <Text style={styles.googleText}>Sign in with Google</Text>
-    </TouchableOpacity>
-  );
-};
-
 const LoginScreen: React.FC<Props> = ({
   navigation,
   onBack,
@@ -205,12 +114,9 @@ const LoginScreen: React.FC<Props> = ({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [hidePassword, setHidePassword] = useState(true);
   const [remember, setRemember] = useState(false);
   const [loginError, setLoginError] = useState("");
-  const [googleEnabled, setGoogleEnabled] = useState(false);
-  const [autoPromptGoogle, setAutoPromptGoogle] = useState(false);
 
   const showError = (msg: string) => Alert.alert("Error", msg);
   const toStorageImageUrl = (path?: string) => {
@@ -234,10 +140,7 @@ const LoginScreen: React.FC<Props> = ({
     user?: { user_type?: string };
   };
 
-  const canUseNativeGoogleAuth =
-    Platform.OS !== "web" && isGoogleAuthAvailable();
-
-  const isBusy = loading || googleLoading;
+  const isBusy = loading;
 
   const requestPostLoginPermissions = useCallback(
     async (options?: { requestLocation?: boolean }) => {
@@ -283,46 +186,6 @@ const LoginScreen: React.FC<Props> = ({
       }
     },
     []
-  );
-
-  const handleGoogleAccessToken = useCallback(
-    async (accessToken: string) => {
-      try {
-        setGoogleLoading(true);
-        const userInfoResp = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        const profile = await userInfoResp.json();
-
-        const displayName = profile?.name || profile?.given_name || "Google User";
-        const displayEmail = profile?.email || "";
-        const userId = profile?.sub || "";
-
-        await AsyncStorage.multiSet([
-          ["token", accessToken],
-          ["user_type", "client"],
-          ["user_name", displayName],
-          ["user_email", displayEmail],
-          ["user_id", String(userId)],
-        ]);
-        await AsyncStorage.multiRemove([
-          ...NANNY_STORAGE_KEYS,
-        ]);
-        await requestPostLoginPermissions({ requestLocation: true });
-        await rebindPushRegistrationForCurrentSession().catch(() => {});
-
-        if (navigation?.replace) {
-          navigation.replace("ParentsHomeTabs");
-        } else {
-          onClientSuccess();
-        }
-      } catch (err: any) {
-        showError(err?.message || "Google sign-in failed");
-      } finally {
-        setGoogleLoading(false);
-      }
-    },
-    [navigation, onClientSuccess, requestPostLoginPermissions]
   );
 
   const handleLogin = async () => {
@@ -441,10 +304,10 @@ const LoginScreen: React.FC<Props> = ({
         if (profile?.number) sets.push(["user_phone", profile.number]);
         if (imageUrl) sets.push(["user_image", imageUrl]);
         sets.push(["user_verification_status", persistedClientStatus]);
-        await AsyncStorage.multiRemove([
+        await AppStorage.multiRemove([
           ...NANNY_STORAGE_KEYS,
         ]);
-        await AsyncStorage.multiSet(sets);
+        await AppStorage.multiSet(sets);
         await requestPostLoginPermissions({ requestLocation: true });
         await rebindPushRegistrationForCurrentSession().catch(() => {});
         if (normalizedClientStatus.includes("blacklist")) {
@@ -654,10 +517,10 @@ const LoginScreen: React.FC<Props> = ({
           sets.push(["nanny_interview_status", String(interviewStatus).toLowerCase().trim()]);
         }
         // Ensure stale client IDs are removed when switching roles
-        await AsyncStorage.multiRemove(CLIENT_STORAGE_KEYS.filter((k) => k !== "user_id"));
-        await AsyncStorage.multiSet(sets);
+        await AppStorage.multiRemove(CLIENT_STORAGE_KEYS.filter((k) => k !== "user_id"));
+        await AppStorage.multiSet(sets);
         if (Array.isArray(availability) && availability.length) {
-          await AsyncStorage.setItem("nanny_availability", JSON.stringify(availability));
+          await AppStorage.setItem("nanny_availability", JSON.stringify(availability));
         }
         await requestPostLoginPermissions({ requestLocation: false });
         await rebindPushRegistrationForCurrentSession().catch(() => {});
@@ -1149,43 +1012,6 @@ const styles = StyleSheet.create({
 
   buttonIcon: {
     marginLeft: rs(10),
-  },
-
-  googleButton: {
-    marginTop: rs(16),
-    borderRadius: rs(14),
-    height: rs(52),
-    borderWidth: 1.5,
-    borderColor: "rgba(242, 124, 156, 0.35)",
-    backgroundColor: "#FFF",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: rs(10),
-    ...Platform.select({
-      web: {
-        boxShadow: `0px 6px 10px ${palette.shadow}`,
-      },
-      default: {
-        elevation: 3,
-        shadowColor: palette.shadow,
-        shadowOffset: { width: rs(0), height: rs(6) },
-        shadowOpacity: 0.15,
-        shadowRadius: 10,
-      },
-    }),
-  },
-
-  googleIcon: {
-    width: rs(18),
-    height: rs(18),
-  },
-
-  googleText: {
-    fontSize: rf(15),
-    fontWeight: "700",
-    color: palette.textPrimary,
-    fontFamily: Fonts.display,
   },
 
   footer: {

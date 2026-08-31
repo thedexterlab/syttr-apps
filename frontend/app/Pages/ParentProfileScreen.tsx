@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
@@ -136,8 +136,8 @@ export default function ParentProfileScreen({ navigation, onRequireVerification 
   const syncRemoteProfile = React.useCallback(async () => {
     try {
       const [userId, token] = await Promise.all([
-        AsyncStorage.getItem("user_id"),
-        AsyncStorage.getItem("token"),
+        AppStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
       ]);
       const normalizedUserId = String(userId || "").trim();
       if (!normalizedUserId) return;
@@ -176,7 +176,7 @@ export default function ParentProfileScreen({ navigation, onRequireVerification 
       if (nextAbout) pairs.push(["user_about", nextAbout]);
       if (nextImage) pairs.push(["user_image", nextImage]);
       if (pairs.length) {
-        await AsyncStorage.multiSet(pairs);
+        await AppStorage.multiSet(pairs);
       }
     } catch (error: any) {
       const status = Number(error?.status || 0);
@@ -218,8 +218,8 @@ export default function ParentProfileScreen({ navigation, onRequireVerification 
   const syncSubscriptionStatus = async () => {
     try {
       const [token, userId] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("user_id"),
       ]);
       const data = await getSubscriptionStatus(
         token || undefined,
@@ -234,20 +234,20 @@ export default function ParentProfileScreen({ navigation, onRequireVerification 
       const plan = String(root?.plan || root?.subscription_plan || "").trim();
       setIsSubscribed(subscribed);
       if (subscribed) {
-        await AsyncStorage.setItem("subscription_plan", plan || "Premium Family");
+        await AppStorage.setItem("subscription_plan", plan || "Premium Family");
       } else {
-        await AsyncStorage.removeItem("subscription_plan");
+        await AppStorage.removeItem("subscription_plan");
       }
     } catch {
       // keep fallback from local storage
     }
   };
 
-  const fetchTazStatus = async () => {
+  const fetchTazStatus = useCallback(async () => {
     try {
       const [userId, tokenRaw] = await Promise.all([
-        AsyncStorage.getItem("user_id"),
-        AsyncStorage.getItem("token"),
+        AppStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
       ]);
       if (!userId) return;
 
@@ -295,7 +295,7 @@ export default function ParentProfileScreen({ navigation, onRequireVerification 
         });
       if (profileIsVerified) {
         setVerificationStatus("verified");
-        await AsyncStorage.setItem("user_verification_status", "approved");
+        await AppStorage.setItem("user_verification_status", "approved");
         return;
       }
 
@@ -347,7 +347,7 @@ export default function ParentProfileScreen({ navigation, onRequireVerification 
       ).trim();
       if (resolvedStatus) {
         setVerificationStatus(normalizeStatus(resolvedStatus));
-        await AsyncStorage.setItem("user_verification_status", resolvedStatus);
+        await AppStorage.setItem("user_verification_status", resolvedStatus);
       }
     } catch (error) {
       if (isVerificationRequiredApiError(error)) {
@@ -356,7 +356,7 @@ export default function ParentProfileScreen({ navigation, onRequireVerification 
       }
       console.error("fetchTazStatus failed", error);
     }
-  };
+  }, [onRequireVerification]);
 
   useEffect(() => {
     const load = async () => {
@@ -372,7 +372,7 @@ export default function ParentProfileScreen({ navigation, onRequireVerification 
         [, imageStored],
         [, rawStatus],
         [, plan],
-      ] = await AsyncStorage.multiGet([
+      ] = await AppStorage.multiGet([
         "user_name",
         "user_email",
         "user_phone",
@@ -415,8 +415,8 @@ export default function ParentProfileScreen({ navigation, onRequireVerification 
   }, [loadChildren, syncRemoteProfile]);
 
   useEffect(() => {
-    fetchTazStatus();
-  }, []);
+    void fetchTazStatus();
+  }, [fetchTazStatus]);
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
@@ -573,10 +573,10 @@ export default function ParentProfileScreen({ navigation, onRequireVerification 
 
     try {
       setSavingProfile(true);
-      const token = await AsyncStorage.getItem("token");
+      const token = await AppStorage.getItem("token");
       const userId =
-        (await AsyncStorage.getItem("user_id")) ||
-        (await AsyncStorage.getItem("id"));
+        (await AppStorage.getItem("user_id")) ||
+        (await AppStorage.getItem("id"));
       if (!userId) {
         Alert.alert("Missing info", "User ID not found. Please re-login.");
         return;
@@ -635,7 +635,7 @@ export default function ParentProfileScreen({ navigation, onRequireVerification 
       setImagePreview(serverImage || "");
       setImageFile(null);
 
-      await AsyncStorage.multiSet([
+      await AppStorage.multiSet([
         ["user_name", fullName],
         ["user_phone", phone.trim()],
         ["user_country", country.trim()],

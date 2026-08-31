@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -62,8 +62,8 @@ export default function FavoriteNanniesScreen({
 
   const loadFavorites = useCallback(async () => {
     const [userId, token] = await Promise.all([
-      AsyncStorage.getItem("user_id"),
-      AsyncStorage.getItem("token"),
+      AppStorage.getItem("user_id"),
+      AppStorage.getItem("token"),
     ]);
 
     try {
@@ -75,7 +75,7 @@ export default function FavoriteNanniesScreen({
           : [];
       const normalized = normalizeFavorites(rows);
       setFavorites(normalized);
-      await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(normalized));
+      await AppStorage.setItem(FAVORITES_KEY, JSON.stringify(normalized));
       return;
     } catch (error) {
       if (isVerificationRequiredApiError(error)) {
@@ -87,7 +87,7 @@ export default function FavoriteNanniesScreen({
     }
 
     try {
-      const raw = await AsyncStorage.getItem(FAVORITES_KEY);
+      const raw = await AppStorage.getItem(FAVORITES_KEY);
       const parsed = raw ? JSON.parse(raw) : [];
       const normalized = normalizeFavorites(Array.isArray(parsed) ? parsed : []);
       setFavorites(normalized);
@@ -104,14 +104,14 @@ export default function FavoriteNanniesScreen({
     const next = favorites.filter((row) => String(row.id) !== String(item.id));
     setFavorites(next);
     try {
-      await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
+      await AppStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
     } catch {
       // ignore local cache write failures
     }
 
     try {
-      const userId = await AsyncStorage.getItem("user_id");
-      const token = await AsyncStorage.getItem("token");
+      const userId = await AppStorage.getItem("user_id");
+      const token = await AppStorage.getItem("token");
       const targetId = item.favorite_id || item.syttr_user_id || item.id;
       if (targetId) {
         await removeFavoriteSyttr(

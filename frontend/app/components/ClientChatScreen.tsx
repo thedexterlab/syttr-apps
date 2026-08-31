@@ -1,6 +1,6 @@
 /// <reference types="react" />
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -23,7 +23,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { addFavoriteSyttr, apiRequest, BASE_URL, isVerificationRequiredApiError, sanitizeToken } from "../Api";
-import { getPusherDiagnostics, reconnectPusher, subscribeToChat } from "../../lib/pusherClient";
+import { reconnectPusher, subscribeToChat } from "../../lib/pusherClient";
 import { rewriteLoopbackAbsoluteUrl } from "../../lib/urlHosts";
 import { rf, rs } from "../utils/responsive";
 import { DocumentPicker } from "../utils/safeDocumentPicker";
@@ -535,10 +535,10 @@ export default function ClientChatScreen({
     setLoading(true);
 
     try {
-      const token = sanitizeToken((await AsyncStorage.getItem("token")) || undefined);
-      const apiKey = String((await AsyncStorage.getItem("api_key")) || "").trim() || undefined;
-      const uid = userId || (await AsyncStorage.getItem("user_id"));
-      const storedNannyId = await AsyncStorage.getItem("nanny_id");
+      const token = sanitizeToken((await AppStorage.getItem("token")) || undefined);
+      const apiKey = String((await AppStorage.getItem("api_key")) || "").trim() || undefined;
+      const uid = userId || (await AppStorage.getItem("user_id"));
+      const storedNannyId = await AppStorage.getItem("nanny_id");
 
       const body: any = { id: activeConvId, conversation_id: activeConvId };
 
@@ -548,8 +548,6 @@ export default function ClientChatScreen({
       } else if (role === "nanny" || storedNannyId) {
         body.nanny_id = storedNannyId || resolvedNannyId;
       }
-
-      console.log("[LOAD] Sending payload:", body);
 
       const json = await apiRequest<any>("chat/messages", {
         method: "POST",
@@ -608,7 +606,7 @@ export default function ClientChatScreen({
   useEffect(() => {
     (async () => {
       try {
-        const typeRaw = await AsyncStorage.getItem("user_type");
+        const typeRaw = await AppStorage.getItem("user_type");
         const type = typeRaw ? typeRaw.toLowerCase() : "";
         if (type === "nanny") {
           setRole("nanny");
@@ -619,8 +617,8 @@ export default function ClientChatScreen({
           return;
         }
         const [storedUserId, storedNannyId] = await Promise.all([
-          AsyncStorage.getItem("user_id"),
-          AsyncStorage.getItem("nanny_id"),
+          AppStorage.getItem("user_id"),
+          AppStorage.getItem("nanny_id"),
         ]);
         if (storedNannyId && !storedUserId) {
           setRole("nanny");
@@ -637,8 +635,8 @@ export default function ClientChatScreen({
 
   const resolveConversationId = async (): Promise<void> => {
     try {
-      const token = sanitizeToken((await AsyncStorage.getItem("token")) || undefined);
-      const uid = userId || (await AsyncStorage.getItem("user_id"));
+      const token = sanitizeToken((await AppStorage.getItem("token")) || undefined);
+      const uid = userId || (await AppStorage.getItem("user_id"));
       const effectiveNannyId = nannyId || resolvedNannyId;
       if (!uid || !effectiveNannyId) return;
 
@@ -724,8 +722,7 @@ export default function ClientChatScreen({
       if (nextId && String(nextId) !== String(requestedConversationId || "")) {
         setConvId(nextId);
       }
-    } catch (e) {
-      console.log("resolve conversation error", e);
+    } catch {
     } finally {
       setResolving(false);
     }
@@ -742,7 +739,7 @@ export default function ClientChatScreen({
     let unsubscribe: (() => void) | undefined;
 
     (async () => {
-      const uid = userId || (await AsyncStorage.getItem("user_id"));
+      const uid = userId || (await AppStorage.getItem("user_id"));
       if (!uid) return;
 
       const { unsubscribe: off } = subscribeToChat(convIdNum, (chat) => {
@@ -764,7 +761,6 @@ export default function ClientChatScreen({
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active") {
-        console.log("[ClientChat] app resumed, forcing Pusher reconnect", getPusherDiagnostics());
         reconnectPusher("client_chat_resumed");
       }
     });
@@ -786,10 +782,10 @@ export default function ClientChatScreen({
     setSending(true);
 
     try {
-      const token = (await AsyncStorage.getItem("token")) || undefined;
-      const apiKey = await AsyncStorage.getItem("api_key") || undefined;
-      const uid = userId || (await AsyncStorage.getItem("user_id"));
-      const storedNannyId = await AsyncStorage.getItem("nanny_id");
+      const token = (await AppStorage.getItem("token")) || undefined;
+      const apiKey = await AppStorage.getItem("api_key") || undefined;
+      const uid = userId || (await AppStorage.getItem("user_id"));
+      const storedNannyId = await AppStorage.getItem("nanny_id");
       const effectiveNannyId = nannyId || resolvedNannyId;
 
       if (!uid || !effectiveNannyId) {
@@ -1034,9 +1030,9 @@ export default function ClientChatScreen({
 
     try {
       const [parentUserId, token, rawFavorites] = await Promise.all([
-        AsyncStorage.getItem("user_id"),
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem(FAVORITES_KEY),
+        AppStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem(FAVORITES_KEY),
       ]);
 
       if (!parentUserId) {
@@ -1076,7 +1072,7 @@ export default function ClientChatScreen({
           profile_image: avatarUrl || undefined,
         },
       ];
-      await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
+      await AppStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
       Alert.alert("Favorites", "Syttr added to favorites.");
     } catch {
       Alert.alert("Favorites", "Unable to add this syttr to favorites.");
@@ -1657,21 +1653,6 @@ function normalizeMessage(
     isMe =
       String(senderUserId) === String(currentUserId) ||
       String(senderNannyId) === String(currentUserId);
-  }
-
-  if (__DEV__) {
-    console.log("MSG DEBUG:", {
-      text,
-      sender,
-      user_id: msg.user_id,
-      nanny_id: msg.nanny_id,
-      senderUserId,
-      senderNannyId,
-      currentUserId,
-      role,
-      hasIsMeFlag,
-      isMe,
-    });
   }
 
   const attachment = extractAttachment(msg);

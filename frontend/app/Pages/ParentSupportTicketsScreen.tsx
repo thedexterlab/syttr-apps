@@ -1,7 +1,7 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
@@ -80,7 +80,7 @@ export default function ParentSupportTicketsScreen({
   const [error, setError] = useState("");
   const [selectedTicketId, setSelectedTicketId] = useState<string>("");
 
-  const loadTickets = async (mode: "initial" | "refresh" = "initial") => {
+  const loadTickets = useCallback(async (mode: "initial" | "refresh" = "initial") => {
     if (mode === "refresh") {
       setRefreshing(true);
     } else {
@@ -89,7 +89,7 @@ export default function ParentSupportTicketsScreen({
     setError("");
 
     try {
-      const entries = await AsyncStorage.multiGet([
+      const entries = await AppStorage.multiGet([
         "token",
         "api_key",
         "user_id",
@@ -134,18 +134,18 @@ export default function ParentSupportTicketsScreen({
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [onRequireVerification]);
 
   useEffect(() => {
     void loadTickets();
-  }, []);
+  }, [loadTickets]);
 
   useEffect(() => {
     const unsubscribe = navigation?.addListener?.("focus", () => {
       void loadTickets();
     });
     return () => unsubscribe?.();
-  }, [navigation]);
+  }, [loadTickets, navigation]);
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
@@ -154,7 +154,7 @@ export default function ParentSupportTicketsScreen({
       }
     });
     return () => sub.remove();
-  }, []);
+  }, [loadTickets]);
 
   useEffect(() => {
     if (!items.length) {

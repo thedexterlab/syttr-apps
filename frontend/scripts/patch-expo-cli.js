@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const cliPath = path.join(__dirname, "..", "node_modules", "expo", "bin", "cli");
+const cliPath = path.join(path.dirname(require.resolve("expo/package.json")), "bin", "cli");
 const markerStart = "// syttr-expo-node-guard:start";
 const markerEnd = "// syttr-expo-node-guard:end";
 const requireLine = "require('@expo/cli');";

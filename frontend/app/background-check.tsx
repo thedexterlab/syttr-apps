@@ -14,10 +14,44 @@ import { useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 
+const BACKGROUND_CHECK_HOSTS = new Set([
+  "hire-safe.instascreen.net",
+  "lightning.instascreen.net",
+]);
+
+// react-native-webview opens URLs outside originWhitelist in the system browser
+// before onShouldStartLoadWithRequest can reject them. Let every attempted
+// navigation reach our stricter URL validator instead.
+const INTERCEPT_ALL_ORIGINS = ["*"];
+
+const getAllowedBackgroundCheckUrl = (value?: string): string | null => {
+  if (!value) return null;
+
+  try {
+    const parsedUrl = new URL(value);
+    const hostname = parsedUrl.hostname.toLowerCase();
+
+    if (
+      parsedUrl.protocol !== "https:" ||
+      parsedUrl.port !== "" ||
+      parsedUrl.username !== "" ||
+      parsedUrl.password !== "" ||
+      !BACKGROUND_CHECK_HOSTS.has(hostname)
+    ) {
+      return null;
+    }
+
+    return parsedUrl.toString();
+  } catch {
+    return null;
+  }
+};
+
 export default function BackgroundCheckWebView() {
   const router = useRouter();
   const { url } = useLocalSearchParams<{ url?: string | string[] }>();
-  const backgroundCheckUrl = Array.isArray(url) ? url[0] : url;
+  const routeUrl = Array.isArray(url) ? url[0] : url;
+  const backgroundCheckUrl = getAllowedBackgroundCheckUrl(routeUrl);
   const webViewRef = useRef<WebView>(null);
   const [canGoBack, setCanGoBack] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -63,11 +97,25 @@ export default function BackgroundCheckWebView() {
           <WebView
             ref={webViewRef}
             source={{ uri: backgroundCheckUrl }}
+            onShouldStartLoadWithRequest={(request) => {
+              const isAllowed = getAllowedBackgroundCheckUrl(request.url) !== null;
+
+              if (!isAllowed) {
+                setLoading(false);
+                setError("Unable to open an untrusted background-check link.");
+              }
+
+              return isAllowed;
+            }}
+            originWhitelist={INTERCEPT_ALL_ORIGINS}
+            mixedContentMode="never"
+            setSupportMultipleWindows={false}
+            javaScriptCanOpenWindowsAutomatically={false}
+            // The provider's QuickApp is an interactive JavaScript form.
             javaScriptEnabled
             domStorageEnabled
-            sharedCookiesEnabled
-            thirdPartyCookiesEnabled
-            originWhitelist={["https://*"]}
+            sharedCookiesEnabled={false}
+            thirdPartyCookiesEnabled={false}
             onNavigationStateChange={(state) => setCanGoBack(state.canGoBack)}
             onLoadStart={() => {
               setLoading(true);

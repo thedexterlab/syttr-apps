@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -398,7 +398,7 @@ export default function SubscriptionScreen({ navigation, onBack, onAddPaymentMet
   const loadPlanConfig = useCallback(async () => {
     setLoadingPlanConfig(true);
     try {
-      const token = await AsyncStorage.getItem("token");
+      const token = await AppStorage.getItem("token");
       const payload = await getSubscriptionPlans(token || undefined);
       const resolvedPlans = resolveSubscriptionPlans(payload);
       const resolvedPlan = resolveDefaultSubscriptionPlan(resolvedPlans);
@@ -426,8 +426,8 @@ export default function SubscriptionScreen({ navigation, onBack, onAddPaymentMet
   const syncSubscriptionStatus = useCallback(async (fallbackPlan?: SubscriptionPlanConfig) => {
     try {
       const [token, userId] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("user_id"),
       ]);
       const data = await getSubscriptionStatus(
         token || undefined,
@@ -493,11 +493,11 @@ export default function SubscriptionScreen({ navigation, onBack, onAddPaymentMet
           planDetails?.name || plan || activePlan.name || DEFAULT_PLAN.name;
         setSubscriptionPlanName(resolvedPlanName);
         if (subscribed) {
-          await AsyncStorage.setItem("subscription_plan", resolvedPlanName);
+          await AppStorage.setItem("subscription_plan", resolvedPlanName);
         }
       } else {
         setSubscriptionPlanName("");
-        await AsyncStorage.removeItem("subscription_plan");
+        await AppStorage.removeItem("subscription_plan");
       }
     } catch (error: any) {
       if (isVerificationRequiredApiError(error)) {
@@ -512,9 +512,9 @@ export default function SubscriptionScreen({ navigation, onBack, onAddPaymentMet
     setLoadingBillingHistory(true);
     try {
       const [token, userId, storedApiKey] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("user_id"),
-        AsyncStorage.getItem("api_key"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("user_id"),
+        AppStorage.getItem("api_key"),
       ]);
       const apiKey =
         storedApiKey ||
@@ -642,9 +642,9 @@ export default function SubscriptionScreen({ navigation, onBack, onAddPaymentMet
 
   const getRequestContext = useCallback(async () => {
     const [tokenRaw, userIdRaw, storedApiKey] = await Promise.all([
-      AsyncStorage.getItem("token"),
-      AsyncStorage.getItem("user_id"),
-      AsyncStorage.getItem("api_key"),
+      AppStorage.getItem("token"),
+      AppStorage.getItem("user_id"),
+      AppStorage.getItem("api_key"),
     ]);
     return {
       token: sanitizeToken(tokenRaw || undefined),
@@ -693,7 +693,7 @@ export default function SubscriptionScreen({ navigation, onBack, onAddPaymentMet
 
       setSubscriptionStatus("active");
       setSubscriptionPlanName(planConfig.name);
-      await AsyncStorage.setItem("subscription_plan", planConfig.name);
+      await AppStorage.setItem("subscription_plan", planConfig.name);
       await Promise.allSettled([
         syncSubscriptionStatus(planConfig),
         loadBillingHistory(),

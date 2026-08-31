@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useMemo, useState } from "react";
 import {
@@ -350,8 +350,8 @@ export default function NannyBookingDetailScreen({
 
   const handleMessage = async () => {
     const [storedUserId, storedNannyId] = await Promise.all([
-      AsyncStorage.getItem("user_id"),
-      AsyncStorage.getItem("nanny_id"),
+      AppStorage.getItem("user_id"),
+      AppStorage.getItem("nanny_id"),
     ]);
 
     const conversationId = pickFirstValue(
@@ -439,10 +439,10 @@ export default function NannyBookingDetailScreen({
     try {
       setDecisionLoading(decision);
       const [tokenRaw, apiKeyStored, nannyId, userId] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("api_key"),
-        AsyncStorage.getItem("nanny_id"),
-        AsyncStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("api_key"),
+        AppStorage.getItem("nanny_id"),
+        AppStorage.getItem("user_id"),
       ]);
 
       const token = sanitizeToken(tokenRaw || undefined);
@@ -841,14 +841,14 @@ function statusBg(status: string) {
 }
 
 function extractKids(job: any) {
-  const kids: Array<{
+  const kids: {
     name?: string;
     age?: number | string;
     gender?: string;
     allergies?: string | null;
     medical_conditions?: string | null;
     notes?: string | null;
-  }> = [];
+  }[] = [];
   const collect = (child: any) => {
     if (!child) return;
     const medicalConditions =

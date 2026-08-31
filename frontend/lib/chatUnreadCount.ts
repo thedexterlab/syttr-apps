@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { apiRequest, sanitizeToken } from "../app/Api";
 
 const toRows = (payload: any): any[] => {
@@ -12,9 +12,9 @@ const toRows = (payload: any): any[] => {
 
 export async function fetchUnreadConversationCount(): Promise<number> {
   const [tokenRaw, userIdRaw, nannyIdRaw] = await Promise.all([
-    AsyncStorage.getItem("token"),
-    AsyncStorage.getItem("user_id"),
-    AsyncStorage.getItem("nanny_id"),
+    AppStorage.getItem("token"),
+    AppStorage.getItem("user_id"),
+    AppStorage.getItem("nanny_id"),
   ]);
 
   const token = sanitizeToken(tokenRaw || undefined);

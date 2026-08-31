@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
@@ -28,10 +28,10 @@ export default function VerificationUnderReviewScreen({ onDone, onRejected }: Pr
     const poll = async () => {
       try {
         const [userId, nannyId, userTypeRaw, token] = await Promise.all([
-          AsyncStorage.getItem("user_id"),
-          AsyncStorage.getItem("nanny_id"),
-          AsyncStorage.getItem("user_type"),
-          AsyncStorage.getItem("token"),
+          AppStorage.getItem("user_id"),
+          AppStorage.getItem("nanny_id"),
+          AppStorage.getItem("user_type"),
+          AppStorage.getItem("token"),
         ]);
         const userType = String(userTypeRaw || "").toLowerCase().trim();
         const isNanny = userType === "nanny" || userType === "syttr";
@@ -93,7 +93,7 @@ export default function VerificationUnderReviewScreen({ onDone, onRejected }: Pr
 
             if (!handledRef.current && adminApproved) {
               handledRef.current = true;
-              await AsyncStorage.multiSet([
+              await AppStorage.multiSet([
                 ["nanny_approval_state", "approved"],
                 ["user_verification_status", "approved"],
               ]);
@@ -102,7 +102,7 @@ export default function VerificationUnderReviewScreen({ onDone, onRejected }: Pr
             }
             if (!handledRef.current && adminRejected) {
               handledRef.current = true;
-              await AsyncStorage.multiSet([
+              await AppStorage.multiSet([
                 ["nanny_approval_state", "rejected"],
                 ["user_verification_status", "rejected"],
               ]);
@@ -165,7 +165,7 @@ export default function VerificationUnderReviewScreen({ onDone, onRejected }: Pr
 
         if (!handledRef.current && verifiedFromAnySource) {
           handledRef.current = true;
-          await AsyncStorage.multiSet([
+          await AppStorage.multiSet([
             ["nanny_approval_state", "approved"],
             ["user_verification_status", "approved"],
           ]);
@@ -174,7 +174,7 @@ export default function VerificationUnderReviewScreen({ onDone, onRejected }: Pr
         }
         if (!handledRef.current && rejectedFromAnySource) {
           handledRef.current = true;
-          await AsyncStorage.multiSet([
+          await AppStorage.multiSet([
             ["nanny_approval_state", "rejected"],
             ["user_verification_status", "rejected"],
           ]);

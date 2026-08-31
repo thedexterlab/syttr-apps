@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -233,7 +233,7 @@ export default function ParentProfileViewScreen({ parent, onBack, onRequireVerif
     const loadProfile = async () => {
       try {
         setLoading(true);
-        const token = (await AsyncStorage.getItem("token")) || undefined;
+        const token = (await AppStorage.getItem("token")) || undefined;
         const [profileResult, kidsResult] = await Promise.allSettled([
           getClientProfile(parentId, token),
           getUserKids(parentId, token),

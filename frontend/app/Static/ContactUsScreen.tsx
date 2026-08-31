@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -98,7 +98,7 @@ export default function ContactUsScreen({ navigation }: Props) {
 
     const loadIdentity = async () => {
       try {
-        const entries = await AsyncStorage.multiGet([
+        const entries = await AppStorage.multiGet([
           "user_type",
           "email",
           "user_email",
@@ -196,7 +196,7 @@ export default function ContactUsScreen({ navigation }: Props) {
 
     setLoading(true);
     try {
-      const entries = await AsyncStorage.multiGet([
+      const entries = await AppStorage.multiGet([
         "token",
         "nanny_token",
         "api_key",

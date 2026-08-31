@@ -1,6 +1,6 @@
 import { Fonts } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useState } from "react";
@@ -205,14 +205,14 @@ const InterviewScheduleScreen: React.FC<Props> = ({ onBack, onSuccess, nannyId }
     setLoading(true);
 
     try {
-      const tokenRaw = await AsyncStorage.getItem("token");
+      const tokenRaw = await AppStorage.getItem("token");
       const token = tokenRaw ? tokenRaw.replace(/^Bearer\s+/i, "").replace(/"/g, "").trim() : "";
-      const storedApiKey = await AsyncStorage.getItem("api_key");
+      const storedApiKey = await AppStorage.getItem("api_key");
       const apiKey = (storedApiKey ? String(storedApiKey).replace(/"/g, "").trim() : "") || getRuntimeApiKey();
 
       const [storedNannyId, storedUserId] = await Promise.all([
-        AsyncStorage.getItem("nanny_id"),
-        AsyncStorage.getItem("user_id"),
+        AppStorage.getItem("nanny_id"),
+        AppStorage.getItem("user_id"),
       ]);
       const effectiveNannyId = String(nannyId || storedNannyId || storedUserId || "").trim();
       if (!effectiveNannyId) {
@@ -592,4 +592,3 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.display,
   },
 });
-

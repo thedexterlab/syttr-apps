@@ -1,7 +1,7 @@
 import { Fonts } from '@/constants/theme';
 import AppLogo from '../_utils/AppLogo';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import React, { useMemo, useState } from 'react';
@@ -162,13 +162,13 @@ const SignupNannyScreen: React.FC<Props> = ({
 
     setLoading(true);
     try {
-      await AsyncStorage.multiRemove([...RESET_KEYS_FOR_NEW_NANNY_SIGNUP]);
-      await AsyncStorage.multiSet([
+      await AppStorage.multiRemove([...RESET_KEYS_FOR_NEW_NANNY_SIGNUP]);
+      await AppStorage.multiSet([
         ["nanny_name", fullName],
         ["nanny_email", email],
         ["user_type", "nanny"],
       ]);
-      await AsyncStorage.setItem(
+      await AppStorage.setItem(
         "signup_nanny_draft",
         JSON.stringify({
           fullname: fullName,

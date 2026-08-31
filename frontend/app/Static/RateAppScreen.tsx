@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -71,7 +71,7 @@ export default function RateAppScreen({ navigation }: Props) {
   };
 
   const submitFeedback = async () => {
-    const entries = await AsyncStorage.multiGet([
+    const entries = await AppStorage.multiGet([
       "token",
       "nanny_token",
       "api_key",
@@ -430,5 +430,4 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 });
-
 

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -868,9 +868,9 @@ export default function ClientBookingDetailScreen({
 
     try {
       const [tokenRaw, userId, apiKeyRaw] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("user_id"),
-        AsyncStorage.getItem("api_key"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("user_id"),
+        AppStorage.getItem("api_key"),
       ]);
       const token = String(tokenRaw || "").replace(/^Bearer\s+/i, "").replace(/"/g, "").trim();
       const apiKey = String(apiKeyRaw || "").trim() || getRuntimeApiKey() || undefined;
@@ -1079,7 +1079,7 @@ export default function ClientBookingDetailScreen({
     let unsubscribe = () => {};
 
     void (async () => {
-      const userId = String((await AsyncStorage.getItem("user_id")) || "").trim();
+      const userId = String((await AppStorage.getItem("user_id")) || "").trim();
       const bookingKey = String(jobId || "").trim();
       if (!active || !userId || !bookingKey) return;
 
@@ -1150,9 +1150,9 @@ export default function ClientBookingDetailScreen({
       inFlight = true;
       try {
         const [userId, tokenRaw, apiKeyRaw] = await Promise.all([
-          AsyncStorage.getItem("user_id"),
-          AsyncStorage.getItem("token"),
-          AsyncStorage.getItem("api_key"),
+          AppStorage.getItem("user_id"),
+          AppStorage.getItem("token"),
+          AppStorage.getItem("api_key"),
         ]);
         const normalizedJobId = String(jobId || "").trim();
         if (!active || !userId || !normalizedJobId) return;
@@ -1663,8 +1663,8 @@ export default function ClientBookingDetailScreen({
 
   const handleMessageSyttr = async () => {
     const userId =
-      (await AsyncStorage.getItem("user_id")) ||
-      (await AsyncStorage.getItem("id"));
+      (await AppStorage.getItem("user_id")) ||
+      (await AppStorage.getItem("id"));
     const conversationId =
       rawJob?.conversation_id ||
       rawJob?.conversationId ||
@@ -1753,9 +1753,9 @@ export default function ClientBookingDetailScreen({
     try {
       setDecisionLoading({ applicationId: target.applicationId, decision });
       const [tokenRaw, userId, apiKey] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("user_id"),
-        AsyncStorage.getItem("api_key"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("user_id"),
+        AppStorage.getItem("api_key"),
       ]);
       if (!userId) {
         if (Platform.OS === "web") window.alert("User ID missing. Please login again.");
@@ -1927,8 +1927,8 @@ export default function ClientBookingDetailScreen({
     try {
       setSavingStatus(true);
       const userId =
-        (await AsyncStorage.getItem("user_id")) ||
-        (await AsyncStorage.getItem("id"));
+        (await AppStorage.getItem("user_id")) ||
+        (await AppStorage.getItem("id"));
       if (!userId) {
         if (Platform.OS === "web") {
           window.alert("User ID missing.");
@@ -1948,12 +1948,12 @@ export default function ClientBookingDetailScreen({
         payload.cancel_reason = payload.reason;
       }
       const [tokenRaw, accessTokenRaw] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("access_token"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("access_token"),
       ]);
       const cleanToken = normalizeTokenValue(tokenRaw || accessTokenRaw);
       const apiKey =
-        (await AsyncStorage.getItem("api_key")) ||
+        (await AppStorage.getItem("api_key")) ||
         getRuntimeApiKey() ||
         undefined;
 
@@ -2098,10 +2098,10 @@ export default function ClientBookingDetailScreen({
         void refreshJobDetails();
       }
       if (action === "cancel") {
-        const stored = await AsyncStorage.getItem("canceled_job_ids");
+        const stored = await AppStorage.getItem("canceled_job_ids");
         const list = Array.isArray(stored ? JSON.parse(stored) : []) ? JSON.parse(stored || "[]") : [];
         const next = Array.from(new Set([...list, String(jobId)]));
-        await AsyncStorage.setItem("canceled_job_ids", JSON.stringify(next));
+        await AppStorage.setItem("canceled_job_ids", JSON.stringify(next));
       }
       if (Platform.OS === "web") {
         window.alert(action === "complete" ? "Job completed." : "Booking canceled.");
@@ -2170,9 +2170,9 @@ export default function ClientBookingDetailScreen({
     try {
       setRequestingExtraHours(true);
       const [userId, tokenRaw, apiKeyRaw] = await Promise.all([
-        AsyncStorage.getItem("user_id"),
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("api_key"),
+        AppStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("api_key"),
       ]);
       if (!userId) {
         throw new Error("User ID missing. Please login again.");

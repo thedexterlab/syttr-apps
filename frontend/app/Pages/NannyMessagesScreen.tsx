@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -39,10 +39,6 @@ type ThreadItem = {
   user_image?: string | null; // This will be the parent's image
 };
 type ThreadId = string | number;
-
-const debug = (msg: string, obj?: unknown) => {
-  if (__DEV__) console.log(msg, obj ?? "");
-};
 
 const normalizeStoredId = (value: unknown): string => {
   if (value === undefined || value === null) return "";
@@ -134,9 +130,9 @@ export default function NannyMessagesScreen({
     setLoading(true);
     try {
       const [tokenRaw, storedNannyIdRaw, storedUserIdRaw] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("nanny_id"),
-        AsyncStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("nanny_id"),
+        AppStorage.getItem("user_id"),
       ]);
 
       const token = sanitizeToken(tokenRaw || undefined);
@@ -151,9 +147,6 @@ export default function NannyMessagesScreen({
       if (explicitNannyId || storedNannyId) {
         const preferredId = explicitNannyId || storedNannyId;
         setCurrentNannyId(preferredId);
-        debug("[NannyMessages] using nanny_id", preferredId);
-      } else {
-        debug("[NannyMessages] nanny_id missing/stale, using token fallback");
       }
 
       const payloads: Record<string, any>[] = token
@@ -174,8 +167,6 @@ export default function NannyMessagesScreen({
             },
             body: JSON.stringify(requestBody),
           });
-          debug("[NannyMessages] raw response:", json);
-
           const rows = extractConversationRows(json);
           raw = rows;
           lastError = null;
@@ -192,8 +183,6 @@ export default function NannyMessagesScreen({
       }
 
       if (lastError) throw lastError;
-
-      debug("[NannyMessages] conversations count:", raw?.length ?? 0);
 
       const normalizedList = normalizeThreads(raw).filter((thread) => {
         const user = String(thread.user_id || "").trim();
@@ -215,7 +204,6 @@ export default function NannyMessagesScreen({
         onRequireVerification?.();
         return;
       }
-      debug("[NannyMessages] threads load error", e);
       Alert.alert("Messages", "Unable to load conversations.");
     } finally {
       setLoading(false);
@@ -237,9 +225,9 @@ export default function NannyMessagesScreen({
     let unsub = () => {};
 
     (async () => {
-      const userType = String((await AsyncStorage.getItem("user_type")) || "").trim().toLowerCase();
-      const nannyStored = normalizeStoredId(await AsyncStorage.getItem("nanny_id"));
-      const userStored = normalizeStoredId(await AsyncStorage.getItem("user_id"));
+      const userType = String((await AppStorage.getItem("user_type")) || "").trim().toLowerCase();
+      const nannyStored = normalizeStoredId(await AppStorage.getItem("nanny_id"));
+      const userStored = normalizeStoredId(await AppStorage.getItem("user_id"));
       const targetId =
         userType === "nanny" || userType === "syttr"
           ? (nannyStored || userStored)
@@ -337,7 +325,6 @@ export default function NannyMessagesScreen({
   /* ---------------- RENDER ITEM ---------------- */
 
   const handleImageError = (itemId: ThreadId) => {
-    debug(`[NannyMessages] Image failed to load for item ${itemId}`);
     setImageErrors(prev => {
       const newSet = new Set(prev);
       newSet.add(String(itemId));
@@ -356,14 +343,6 @@ export default function NannyMessagesScreen({
     const effectiveNannyId = item.nanny_id ?? currentNannyId ?? null;
     const effectiveUserId = item.user_id ?? null;
     
-    debug("Rendering thread item:", {
-      id: item.id,
-      name: item.name,
-      hasImage: !!item.user_image && !hasImageError,
-      imageUrl: item.user_image,
-      unread
-    });
-
     const handlePress = () => {
       if (!item.id) {
         Alert.alert("Cannot open chat", "Missing conversation ID.");
@@ -383,8 +362,6 @@ export default function NannyMessagesScreen({
         userImage: item.user_image,
         avatar: item.user_image,
       };
-
-      debug("Opening chat with params:", chatParams);
 
       if (onOpenChat) {
         onOpenChat(chatParams);
@@ -604,7 +581,6 @@ const buildFullImageUrl = (imagePath: string | null | undefined): string | null 
   try {
     if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
       const resolvedUrl = rewriteLoopbackAbsoluteUrl(imagePath, STORAGE_ROOT);
-      debug("[NannyMessages] Image already has full URL:", imagePath);
       return resolvedUrl;
     }
     if (imagePath.startsWith("data:") || imagePath.startsWith("blob:")) {
@@ -623,14 +599,8 @@ const buildFullImageUrl = (imagePath: string | null | undefined): string | null 
       fullUrl = `${STORAGE_ROOT.replace(/\/+$/, "")}/storage/${cleanPath}`;
     }
     
-    debug("[NannyMessages] Built image URL:", {
-      original: imagePath,
-      fullUrl
-    });
-    
     return fullUrl;
-  } catch (error) {
-    debug("[NannyMessages] Error building image URL:", error);
+  } catch {
     return null;
   }
 };
@@ -776,8 +746,7 @@ function formatTime(value?: string) {
       hour: "numeric",
       minute: "2-digit",
     });
-  } catch (error) {
-    debug("Error formatting date:", { value, error });
+  } catch {
     return "";
   }
 }

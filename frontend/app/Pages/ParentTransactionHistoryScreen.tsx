@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -120,9 +120,9 @@ export default function ParentTransactionHistoryScreen({ navigation, onBack, onR
   const loadTransactions = useCallback(async () => {
     try {
       const [tokenRaw, userId, storedApiKey] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("user_id"),
-        AsyncStorage.getItem("api_key"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("user_id"),
+        AppStorage.getItem("api_key"),
       ]);
       const token = sanitizeToken(tokenRaw || undefined);
       const apiKey = String(storedApiKey || "").trim() || getRuntimeApiKey();

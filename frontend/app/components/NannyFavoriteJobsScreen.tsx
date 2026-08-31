@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -215,15 +215,15 @@ const NannyFavoriteJobsScreen: React.FC<Props> = ({
   const loadFavorites = async () => {
     setLoading(true);
     try {
-      const token = sanitizeToken((await AsyncStorage.getItem("token")) || undefined);
+      const token = sanitizeToken((await AppStorage.getItem("token")) || undefined);
       const apiKey =
-        (await AsyncStorage.getItem("api_key")) ||
+        (await AppStorage.getItem("api_key")) ||
         getRuntimeApiKey() ||
         undefined;
       const nannyId =
-        (await AsyncStorage.getItem("nanny_id")) ||
-        (await AsyncStorage.getItem("user_id"));
-      const localRaw = await AsyncStorage.getItem("favorite_jobs");
+        (await AppStorage.getItem("nanny_id")) ||
+        (await AppStorage.getItem("user_id"));
+      const localRaw = await AppStorage.getItem("favorite_jobs");
       const localParsed = localRaw ? JSON.parse(localRaw) : [];
       const localFavorites = Array.isArray(localParsed)
         ? localParsed.map(normalizeFavoriteJob).filter(Boolean) as JobItem[]
@@ -266,7 +266,7 @@ const NannyFavoriteJobsScreen: React.FC<Props> = ({
         return;
       }
       try {
-        const localRaw = await AsyncStorage.getItem("favorite_jobs");
+        const localRaw = await AppStorage.getItem("favorite_jobs");
         const localParsed = localRaw ? JSON.parse(localRaw) : [];
         const localFavorites = Array.isArray(localParsed)
           ? localParsed.map(normalizeFavoriteJob).filter(Boolean) as JobItem[]
@@ -283,9 +283,9 @@ const NannyFavoriteJobsScreen: React.FC<Props> = ({
   /* ---------- REMOVE FAVORITE ---------- */
   const removeFavorite = async (jobId: number | string) => {
     try {
-      const token = sanitizeToken((await AsyncStorage.getItem("token")) || undefined);
+      const token = sanitizeToken((await AppStorage.getItem("token")) || undefined);
       const apiKey =
-        (await AsyncStorage.getItem("api_key")) ||
+        (await AppStorage.getItem("api_key")) ||
         getRuntimeApiKey() ||
         undefined;
       const targetFavoriteId = jobs.find((j) => String(j.id) === String(jobId))?.favorite_id;
@@ -308,14 +308,14 @@ const NannyFavoriteJobsScreen: React.FC<Props> = ({
 
       const normalizedId = String(jobId);
       setJobs((prev) => prev.filter((j) => String(j.id) !== normalizedId));
-      const localRaw = await AsyncStorage.getItem("favorite_jobs");
+      const localRaw = await AppStorage.getItem("favorite_jobs");
       const localParsed = localRaw ? JSON.parse(localRaw) : [];
       const localFavorites = Array.isArray(localParsed) ? localParsed : [];
       const nextLocal = localFavorites.filter((job: any) => {
         const id = job?.id ?? job?.job_id ?? job?.job?.id;
         return String(id) !== normalizedId;
       });
-      await AsyncStorage.multiSet([
+      await AppStorage.multiSet([
         ["favorite_jobs", JSON.stringify(nextLocal)],
         ["favorite_job_ids", JSON.stringify(nextLocal.map((job: any) => String(job?.id ?? job?.job_id ?? job?.job?.id)).filter(Boolean))],
       ]);

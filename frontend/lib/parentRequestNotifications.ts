@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { apiRequest, BASE_URL, getRuntimeApiKey, sanitizeToken } from "../app/Api";
 
 const API_BASE = String(BASE_URL || "").replace(/\/+$/, "");
@@ -48,7 +48,7 @@ const scopedStorageKey = (key: string, userId?: string): string => {
 
 const readStoredSet = async (key: string): Promise<Set<string>> => {
   try {
-    const raw = await AsyncStorage.getItem(key);
+    const raw = await AppStorage.getItem(key);
     const parsed = raw ? JSON.parse(raw) : [];
     return toSet(parsed);
   } catch {
@@ -57,7 +57,7 @@ const readStoredSet = async (key: string): Promise<Set<string>> => {
 };
 
 const writeStoredSet = async (key: string, ids: Set<string>) => {
-  await AsyncStorage.setItem(key, JSON.stringify(Array.from(ids)));
+  await AppStorage.setItem(key, JSON.stringify(Array.from(ids)));
 };
 
 const readScopedStoredSet = async (key: string, userId?: string): Promise<Set<string>> => {
@@ -573,9 +573,9 @@ const dedupeRequests = (
 
 const getAuthContext = async () => {
   const [tokenRaw, userId, storedApiKey] = await Promise.all([
-    AsyncStorage.getItem("token"),
-    AsyncStorage.getItem("user_id"),
-    AsyncStorage.getItem("api_key"),
+    AppStorage.getItem("token"),
+    AppStorage.getItem("user_id"),
+    AppStorage.getItem("api_key"),
   ]);
 
   return {

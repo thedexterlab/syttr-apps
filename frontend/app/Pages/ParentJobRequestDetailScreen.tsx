@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useMemo, useState } from "react";
 import { Alert, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -151,7 +151,7 @@ const kidCompletenessScore = (kid: any) =>
   ].filter(Boolean).length;
 
 const dedupeKids = (
-  kids: Array<{
+  kids: {
     id?: string | number;
     name?: string;
     age?: string | number;
@@ -159,7 +159,7 @@ const dedupeKids = (
     allergies?: string;
     medical_conditions?: string;
     notes?: string;
-  }>
+  }[]
 ) => {
   const unique = new Map<string, (typeof kids)[number]>();
   kids.forEach((kid) => {
@@ -383,9 +383,9 @@ export default function ParentJobRequestDetailScreen({
         if (!needsHydration || !notificationJobId) return;
 
         const [tokenRaw, userId, apiKeyStored] = await Promise.all([
-          AsyncStorage.getItem("token"),
-          AsyncStorage.getItem("user_id"),
-          AsyncStorage.getItem("api_key"),
+          AppStorage.getItem("token"),
+          AppStorage.getItem("user_id"),
+          AppStorage.getItem("api_key"),
         ]);
         const token = sanitizeToken(tokenRaw || undefined);
         const apiKey = String(apiKeyStored || "").trim() || getRuntimeApiKey() || undefined;
@@ -509,6 +509,11 @@ export default function ParentJobRequestDetailScreen({
   const createdAt = item?.created_at || item?.time || "";
   const status = String(item?.status || application?.status || "pending");
   const directCoords = extractCoordinates({ ...job, location: locationLabel || job?.location });
+  const requestId = item?.id;
+  const requestSourceIds = item?.source_ids;
+  const requestKey = item?.request_key;
+  const requestApplicationId = item?.application_id;
+  const requestJobId = item?.job_id;
 
   useEffect(() => {
     let canceled = false;
@@ -543,7 +548,7 @@ export default function ParentJobRequestDetailScreen({
 
     const syncRequestState = async () => {
       try {
-        await markParentRequestAsRead(item || {});
+        await markParentRequestAsRead({ id: requestId, source_ids: requestSourceIds });
       } catch {
         // local override fallback is handled in utility
       }
@@ -567,7 +572,7 @@ export default function ParentJobRequestDetailScreen({
     return () => {
       mounted = false;
     };
-  }, [item?.id, item?.request_key, item?.application_id, item?.job_id]);
+  }, [requestApplicationId, requestId, requestJobId, requestKey, requestSourceIds]);
 
   useEffect(() => {
     const unsubscribe = navigation?.addListener?.("focus", () => {
@@ -745,9 +750,9 @@ export default function ParentJobRequestDetailScreen({
     try {
       setDecisionLoading(decision);
       const [tokenRaw, userId, apiKeyStored] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("user_id"),
-        AsyncStorage.getItem("api_key"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("user_id"),
+        AppStorage.getItem("api_key"),
       ]);
       if (!userId) {
         Alert.alert("Request", "User ID missing. Please login again.");

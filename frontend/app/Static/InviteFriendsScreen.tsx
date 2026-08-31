@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -53,18 +53,18 @@ export default function InviteFriendsScreen({ navigation }: Props) {
         useNativeDriver: useNative,
       }),
     ]).start();
-  }, []);
+  }, [fade, scale, slide, useNative]);
 
   useEffect(() => {
     const hydrateReferralCode = async () => {
       const [directCode, fallbackCode, profileRaw, userId, nannyId, token, genericId] = await Promise.all([
-        AsyncStorage.getItem("referral_code"),
-        AsyncStorage.getItem("user_referral_code"),
-        AsyncStorage.getItem("user_profile"),
-        AsyncStorage.getItem("user_id"),
-        AsyncStorage.getItem("nanny_id"),
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("id"),
+        AppStorage.getItem("referral_code"),
+        AppStorage.getItem("user_referral_code"),
+        AppStorage.getItem("user_profile"),
+        AppStorage.getItem("user_id"),
+        AppStorage.getItem("nanny_id"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("id"),
       ]);
       let profileCode = "";
       if (profileRaw) {
@@ -105,7 +105,7 @@ export default function InviteFriendsScreen({ navigation }: Props) {
               ""
           ).trim();
           if (backendCode) {
-            await AsyncStorage.multiSet([
+            await AppStorage.multiSet([
               ["referral_code", backendCode],
               ["user_referral_code", backendCode],
             ]);
@@ -472,5 +472,3 @@ const styles = StyleSheet.create({
     color: "#AD1457",
   },
 });
-
-

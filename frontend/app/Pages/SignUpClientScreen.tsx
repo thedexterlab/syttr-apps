@@ -1,7 +1,7 @@
 import { Fonts } from "@/constants/theme";
 import AppLogo from "../_utils/AppLogo";
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useState } from "react";
 import {
@@ -133,13 +133,13 @@ const SignUpClientScreen: React.FC<Props> = ({
     setIsLoading(true);
     try {
       // New signup must not reuse a previous logged-in session.
-      await AsyncStorage.multiRemove([...RESET_KEYS_FOR_NEW_CLIENT_SIGNUP]);
-      await AsyncStorage.multiSet([
+      await AppStorage.multiRemove([...RESET_KEYS_FOR_NEW_CLIENT_SIGNUP]);
+      await AppStorage.multiSet([
         ["user_name", trimmedName],
         ["user_email", trimmedEmail],
         ["user_type", "client"],
       ]);
-      await AsyncStorage.setItem(
+      await AppStorage.setItem(
         "signup_client_draft",
         JSON.stringify({
           fullname: trimmedName,
@@ -648,4 +648,3 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.display,
   },
 });
-

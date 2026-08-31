@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { useCallback, useEffect, useState } from "react";
 import { addKid, deleteKid, getUserKids, isVerificationRequiredApiError, updateKid } from "../Api";
 
@@ -60,17 +60,17 @@ export function useManageChildStore(onVerificationRequired?: () => void) {
 
   const persist = async (next: Kid[]) => {
     setKids(next);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    await AppStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   };
 
   const loadChildren = useCallback(async () => {
     setIsLoading(true);
     try {
       try {
-        const token = await AsyncStorage.getItem("token");
+        const token = await AppStorage.getItem("token");
         const userId =
-          (await AsyncStorage.getItem("user_id")) ||
-          (await AsyncStorage.getItem("id"));
+          (await AppStorage.getItem("user_id")) ||
+          (await AppStorage.getItem("id"));
         console.log("[Kids] load start", { userId });
 
         if (userId) {
@@ -92,7 +92,7 @@ export function useManageChildStore(onVerificationRequired?: () => void) {
 
       // fallback to cache
       try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        const raw = await AppStorage.getItem(STORAGE_KEY);
         const cached = raw ? JSON.parse(raw) : [];
         const list = Array.isArray(cached) ? cached.map(normalizeKid) : [];
         setKids(list);
@@ -112,10 +112,10 @@ export function useManageChildStore(onVerificationRequired?: () => void) {
   const addChild = async (kid: Kid) => {
     try {
       setIsAdding(true);
-      const token = await AsyncStorage.getItem("token");
+      const token = await AppStorage.getItem("token");
       const userId =
-        (await AsyncStorage.getItem("user_id")) ||
-        (await AsyncStorage.getItem("id"));
+        (await AppStorage.getItem("user_id")) ||
+        (await AppStorage.getItem("id"));
       console.log("[Kids] add", { kid, userId });
       if (!userId) {
         console.log("[Kids] add aborted: missing user_id");
@@ -152,7 +152,7 @@ export function useManageChildStore(onVerificationRequired?: () => void) {
     try {
       setIsEditing(true);
       console.log("[Kids] edit", { index, kid });
-      const token = await AsyncStorage.getItem("token");
+      const token = await AppStorage.getItem("token");
       const fallbackKidId =
         index != null && index >= 0 && index < kids.length
           ? kids[index]?.id
@@ -197,7 +197,7 @@ export function useManageChildStore(onVerificationRequired?: () => void) {
   const removeChild = async (index: number, kid?: Kid) => {
     try {
       setIsDeleting(true);
-      const token = await AsyncStorage.getItem("token");
+      const token = await AppStorage.getItem("token");
       const fallbackKidId =
         index != null && index >= 0 && index < kids.length
           ? kids[index]?.id

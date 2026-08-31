@@ -1,7 +1,7 @@
-﻿import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Ionicons } from "@expo/vector-icons";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -242,9 +242,10 @@ export default function NannyJobsScreen({
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [favoriteRecordByJobId, setFavoriteRecordByJobId] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
-  const [activeJob, setActiveJob] = useState<any>(null);
+  const [, setActiveJob] = useState<any>(null);
   const [applyingJobIds, setApplyingJobIds] = useState<string[]>([]);
   const [activeTab] = useState<NannyNavKey>("Jobs");
+  const fetchJobsRef = useRef<() => Promise<void>>(async () => {});
 
   const isVerificationRequiredError = (error: any) => {
     const message = String(error?.message || "").toLowerCase();
@@ -267,44 +268,22 @@ export default function NannyJobsScreen({
     );
   };
 
-  const extractKidInfo = (job: any) => {
-    const names: string[] = [];
-    const ages: Array<number | string> = [];
-
-    const collect = (child: any) => {
-      if (!child) return;
-      if (child.name) names.push(child.name);
-      if (child.age !== undefined && child.age !== null) ages.push(child.age);
-    };
-
-    const sources = [job?.kid, job?.child, job?.kids];
-    sources.forEach((source) => {
-      if (Array.isArray(source)) {
-        source.forEach((entry: any) => collect(entry?.kids || entry?.kid || entry));
-      } else {
-        collect(source);
-      }
-    });
-
-    return { names, ages };
-  };
-
   useEffect(() => {
-    fetchJobs();
-    loadFavorites();
+    void fetchJobsRef.current();
+    void loadFavorites();
   }, []);
 
   const loadFavorites = async () => {
     try {
-      const token = sanitizeToken((await AsyncStorage.getItem("token")) || undefined);
+      const token = sanitizeToken((await AppStorage.getItem("token")) || undefined);
       const apiKey =
-        (await AsyncStorage.getItem("api_key")) ||
+        (await AppStorage.getItem("api_key")) ||
         getRuntimeApiKey() ||
         undefined;
-      const storedNannyId = await AsyncStorage.getItem("nanny_id");
-      const storedUserId = await AsyncStorage.getItem("user_id");
+      const storedNannyId = await AppStorage.getItem("nanny_id");
+      const storedUserId = await AppStorage.getItem("user_id");
       const nannyId = String(storedNannyId || storedUserId || "").trim();
-      const raw = await AsyncStorage.getItem("favorite_job_ids");
+      const raw = await AppStorage.getItem("favorite_job_ids");
       const parsed = raw ? JSON.parse(raw) : [];
       const localIds = Array.isArray(parsed) ? parsed.map((id) => String(id)) : [];
 
@@ -347,7 +326,7 @@ export default function NannyJobsScreen({
   };
 
   const persistFavorites = async (ids: string[], favorites: any[]) => {
-    await AsyncStorage.multiSet([
+    await AppStorage.multiSet([
       ["favorite_job_ids", JSON.stringify(ids)],
       ["favorite_jobs", JSON.stringify(favorites)],
     ]);
@@ -368,15 +347,15 @@ export default function NannyJobsScreen({
   setLoading(true);
   try {
     const tokenRaw =
-      (await AsyncStorage.getItem("token")) ||
-      (await AsyncStorage.getItem("nanny_token"));
+      (await AppStorage.getItem("token")) ||
+      (await AppStorage.getItem("nanny_token"));
     const token = sanitizeToken(tokenRaw || undefined);
     const apiKey =
-      (await AsyncStorage.getItem("api_key")) ||
+      (await AppStorage.getItem("api_key")) ||
       getRuntimeApiKey() ||
       undefined;
-    const storedNannyId = await AsyncStorage.getItem("nanny_id");
-    const storedUserId = await AsyncStorage.getItem("user_id");
+    const storedNannyId = await AppStorage.getItem("nanny_id");
+    const storedUserId = await AppStorage.getItem("user_id");
     const effectiveNannyId = String(storedNannyId || storedUserId || "").trim();
     const query = effectiveNannyId
       ? `?nanny_id=${encodeURIComponent(effectiveNannyId)}`
@@ -419,13 +398,6 @@ export default function NannyJobsScreen({
           parentFullName ||
           job.parent?.name ||
           "Parent";
-        const kidInfo = extractKidInfo(job);
-        const kidName =
-          kidInfo.names.join(", ") ||
-          job.kid_name ||
-          (job.kid_id ? `Kid #${job.kid_id}` : "");
-        const hours = job.hours ? `${job.hours} ` : "Hours TBD";
-
         const rate =
           job.price ||
           job.total_price ||
@@ -520,6 +492,7 @@ export default function NannyJobsScreen({
     setLoading(false);
   }
 };
+  fetchJobsRef.current = fetchJobs;
 
 
   const applyToJob = async (jobId: string) => {
@@ -528,13 +501,13 @@ export default function NannyJobsScreen({
       prev.includes(String(jobId)) ? prev : [...prev, String(jobId)]
     );
     try {
-      const token = sanitizeToken((await AsyncStorage.getItem("token")) || undefined);
-      const storedNannyId = await AsyncStorage.getItem("nanny_id");
-      const storedUserId = await AsyncStorage.getItem("user_id");
+      const token = sanitizeToken((await AppStorage.getItem("token")) || undefined);
+      const storedNannyId = await AppStorage.getItem("nanny_id");
+      const storedUserId = await AppStorage.getItem("user_id");
       const effectiveNannyId = String(storedNannyId || storedUserId || "").trim();
       const effectiveUserId = String(storedUserId || storedNannyId || "").trim();
       const apiKey =
-        (await AsyncStorage.getItem("api_key")) ||
+        (await AppStorage.getItem("api_key")) ||
         getRuntimeApiKey() ||
         undefined;
 
@@ -609,13 +582,13 @@ export default function NannyJobsScreen({
   const toggleSaved = async (job: any) => {
     const jobId = String(job.id);
     const isSaved = savedIds.includes(jobId);
-    const token = sanitizeToken((await AsyncStorage.getItem("token")) || undefined);
+    const token = sanitizeToken((await AppStorage.getItem("token")) || undefined);
     const apiKey =
-      (await AsyncStorage.getItem("api_key")) ||
+      (await AppStorage.getItem("api_key")) ||
       getRuntimeApiKey() ||
       undefined;
-    const storedNannyId = await AsyncStorage.getItem("nanny_id");
-    const storedUserId = await AsyncStorage.getItem("user_id");
+    const storedNannyId = await AppStorage.getItem("nanny_id");
+    const storedUserId = await AppStorage.getItem("user_id");
     const effectiveNannyId = String(storedNannyId || storedUserId || "").trim();
     const effectiveUserId = String(storedUserId || storedNannyId || "").trim();
 
@@ -669,7 +642,7 @@ export default function NannyJobsScreen({
 
     let favorites: any[] = [];
     try {
-      const raw = await AsyncStorage.getItem("favorite_jobs");
+      const raw = await AppStorage.getItem("favorite_jobs");
       favorites = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(favorites)) favorites = [];
     } catch {

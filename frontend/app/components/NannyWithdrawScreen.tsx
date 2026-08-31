@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useState } from "react";
 import {
@@ -132,10 +132,10 @@ const NannyWithdrawScreen: React.FC<Props> = ({ navigation, onBack, onRequireVer
 
   const getAuthContext = React.useCallback(async () => {
     const [token1, token2, nannyRaw, apiRaw] = await Promise.all([
-      AsyncStorage.getItem("token"),
-      AsyncStorage.getItem("nanny_token"),
-      AsyncStorage.getItem("nanny_id"),
-      AsyncStorage.getItem("api_key"),
+      AppStorage.getItem("token"),
+      AppStorage.getItem("nanny_token"),
+      AppStorage.getItem("nanny_id"),
+      AppStorage.getItem("api_key"),
     ]);
     const rawToken = token1 || token2;
     const token = cleanValue(rawToken);

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -725,11 +725,11 @@ export default function JobStatusScreen({ navigation, onBack, onOpenBooking, onR
     }
     try {
       const [tokenRaw, accessTokenRaw, nannyTokenRaw, userId, storedApiKey] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("access_token"),
-        AsyncStorage.getItem("nanny_token"),
-        AsyncStorage.getItem("user_id"),
-        AsyncStorage.getItem("api_key"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("access_token"),
+        AppStorage.getItem("nanny_token"),
+        AppStorage.getItem("user_id"),
+        AppStorage.getItem("api_key"),
       ]);
       if (!userId) {
         Alert.alert("Delete job", "User ID missing. Please login again.");
@@ -782,11 +782,11 @@ export default function JobStatusScreen({ navigation, onBack, onOpenBooking, onR
 
     try {
       const [tokenRaw, nannyTokenRaw, accessTokenRaw, userId, legacyId] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("nanny_token"),
-        AsyncStorage.getItem("access_token"),
-        AsyncStorage.getItem("user_id"),
-        AsyncStorage.getItem("id"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("nanny_token"),
+        AppStorage.getItem("access_token"),
+        AppStorage.getItem("user_id"),
+        AppStorage.getItem("id"),
       ]);
       const effectiveUserId = userId || legacyId;
       if (!effectiveUserId) {
@@ -798,7 +798,7 @@ export default function JobStatusScreen({ navigation, onBack, onOpenBooking, onR
       const tokenCandidate = tokenRaw || accessTokenRaw || nannyTokenRaw || "";
       const token = sanitizeToken(tokenCandidate || undefined);
       const apiKey =
-        String((await AsyncStorage.getItem("api_key")) || "").trim() ||
+        String((await AppStorage.getItem("api_key")) || "").trim() ||
         getRuntimeApiKey() ||
         "";
       const headers = {
@@ -865,8 +865,8 @@ export default function JobStatusScreen({ navigation, onBack, onOpenBooking, onR
         : [];
 
       const [storedCanceled, storedHiddenJobIds] = await Promise.all([
-        AsyncStorage.getItem("canceled_job_ids"),
-        AsyncStorage.getItem(HIDDEN_JOB_STATUS_IDS_KEY),
+        AppStorage.getItem("canceled_job_ids"),
+        AppStorage.getItem(HIDDEN_JOB_STATUS_IDS_KEY),
       ]);
       let canceledParsed: any[] = [];
       let hiddenParsed: any[] = [];
@@ -1063,8 +1063,8 @@ export default function JobStatusScreen({ navigation, onBack, onOpenBooking, onR
 
     void (async () => {
       const userId = String(
-        (await AsyncStorage.getItem("user_id")) ||
-          (await AsyncStorage.getItem("id")) ||
+        (await AppStorage.getItem("user_id")) ||
+          (await AppStorage.getItem("id")) ||
           ""
       ).trim();
       if (!active || !userId) return;

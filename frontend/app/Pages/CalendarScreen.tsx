@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { useEffect, useMemo, useState } from "react";
+import AppStorage from "@/lib/storage";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
@@ -72,7 +72,7 @@ const isNotificationRead = (item?: { isRead?: unknown; is_read?: unknown } | nul
   return false;
 };
 const getStoredAuthData = async () => {
-  const entries = await AsyncStorage.multiGet([
+  const entries = await AppStorage.multiGet([
     "token",
     "api_key",
     "user_id",
@@ -320,14 +320,6 @@ export default function CalendarScreen({
 
   const daysGrid = useMemo(() => buildMonthGrid(selected), [selected]);
   const selectedKey = useMemo(() => formatKey(selected), [selected]);
-  const todaysEvents = useMemo(() => {
-    const list = Array.isArray(eventsByDay[selectedKey]) ? [...eventsByDay[selectedKey]] : [];
-    return list.sort((a: any, b: any) => {
-      const statusDiff = getStatusPriority(b?.status) - getStatusPriority(a?.status);
-      if (statusDiff !== 0) return statusDiff;
-      return String(a?.start || "").localeCompare(String(b?.start || ""));
-    });
-  }, [eventsByDay, selectedKey]);
   const monthKey = `${selected.getFullYear()}-${String(
     selected.getMonth() + 1
   ).padStart(2, "0")}`;
@@ -362,35 +354,7 @@ export default function CalendarScreen({
     );
   }, 0);
 
-  useEffect(() => {
-    loadBookings();
-    loadNotificationCount();
-    loadMessageCount();
-    loadRequestCount();
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = navigation?.addListener?.("focus", () => {
-      loadBookings();
-      loadNotificationCount();
-      loadMessageCount();
-      loadRequestCount();
-    });
-    return () => unsubscribe?.();
-  }, [navigation]);
-
-  useEffect(() => {
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") {
-        loadNotificationCount();
-        loadMessageCount();
-        loadRequestCount();
-      }
-    });
-    return () => sub.remove();
-  }, []);
-
-  const loadBookings = async () => {
+  const loadBookings = useCallback(async () => {
     setLoading(true);
     try {
       const storage = await getStoredAuthData();
@@ -464,7 +428,7 @@ export default function CalendarScreen({
         .filter(Boolean);
       const dedupedRaw = dedupeJobs(raw);
 
-      const storedCanceled = await AsyncStorage.getItem("canceled_job_ids");
+      const storedCanceled = await AppStorage.getItem("canceled_job_ids");
       let canceledParsed: any[] = [];
       try {
         const parsed = storedCanceled ? JSON.parse(storedCanceled) : [];
@@ -565,7 +529,7 @@ export default function CalendarScreen({
     } finally {
       setLoading(false);
     }
-  };
+  }, [onRequireVerification]);
 
   const loadNotificationCount = async () => {
     try {
@@ -622,6 +586,34 @@ export default function CalendarScreen({
       setMessageCount(0);
     }
   };
+
+  useEffect(() => {
+    void loadBookings();
+    void loadNotificationCount();
+    void loadMessageCount();
+    void loadRequestCount();
+  }, [loadBookings]);
+
+  useEffect(() => {
+    const unsubscribe = navigation?.addListener?.("focus", () => {
+      void loadBookings();
+      void loadNotificationCount();
+      void loadMessageCount();
+      void loadRequestCount();
+    });
+    return () => unsubscribe?.();
+  }, [loadBookings, navigation]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        void loadNotificationCount();
+        void loadMessageCount();
+        void loadRequestCount();
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   return (
     <View style={styles.container}>

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -240,14 +240,6 @@ const parseLocalDateLike = (value: any): Date | null => {
   return Number.isFinite(fallback.getTime()) ? fallback : null;
 };
 
-const getWeekStartMonday = (date = new Date()) => {
-  const base = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const offset = (base.getDay() + 6) % 7; // Monday=0 ... Sunday=6
-  base.setDate(base.getDate() - offset);
-  base.setHours(0, 0, 0, 0);
-  return base;
-};
-
 const getDateKeyInTimeZone = (
   value: any,
   timeZone = DEFAULT_EARNINGS_TIME_ZONE
@@ -425,6 +417,23 @@ export default function NannyHomeScreen({
   const initializedMessageCountRef = useRef(false);
   const networkWarnAtRef = useRef<Record<string, number>>({});
   const lastHireRequestClosedAlertRef = useRef("");
+  const dashboardLoadersRef = useRef<{
+    fetchRateCard: () => Promise<void>;
+    fetchHireRequests: (silent?: boolean) => Promise<void>;
+    fetchNextBooking: () => Promise<void>;
+    fetchRatingSummary: () => Promise<void>;
+    fetchWeeklyEarnings: () => Promise<void>;
+    fetchNotificationCount: () => Promise<void>;
+    checkProfileStatus: () => Promise<void>;
+  }>({
+    fetchRateCard: async () => {},
+    fetchHireRequests: async () => {},
+    fetchNextBooking: async () => {},
+    fetchRatingSummary: async () => {},
+    fetchWeeklyEarnings: async () => {},
+    fetchNotificationCount: async () => {},
+    checkProfileStatus: async () => {},
+  });
   const maxEarning = useMemo(() => {
     const values = earningsByDay.map((entry) => entry.amount || 0);
     const max = Math.max(0, ...values);
@@ -479,7 +488,7 @@ export default function NannyHomeScreen({
 
   useEffect(() => {
     const load = async () => {
-      const entries = await AsyncStorage.multiGet([
+      const entries = await AppStorage.multiGet([
         "nanny_name",
         "user_name",
         "name",
@@ -533,10 +542,10 @@ export default function NannyHomeScreen({
       }
       try {
         const [tokenRaw, storedNannyId, storedUserId, storedApiKey] = await Promise.all([
-          AsyncStorage.getItem("token"),
-          AsyncStorage.getItem("nanny_id"),
-          AsyncStorage.getItem("user_id"),
-          AsyncStorage.getItem("api_key"),
+          AppStorage.getItem("token"),
+          AppStorage.getItem("nanny_id"),
+          AppStorage.getItem("user_id"),
+          AppStorage.getItem("api_key"),
         ]);
         const token = sanitizeToken(tokenRaw || undefined);
         const effectiveNannyId = String(storedNannyId || storedUserId || "").trim();
@@ -593,7 +602,7 @@ export default function NannyHomeScreen({
           if (directAvatar) {
             setAvatarFailed(false);
             setAvatarUrl(directAvatar);
-            await AsyncStorage.multiSet([
+            await AppStorage.multiSet([
               ["nanny_image", directAvatar],
               ["user_image", directAvatar],
             ]);
@@ -610,7 +619,7 @@ export default function NannyHomeScreen({
             sanitizeDisplayName(detailsRow?.user?.name);
           if (directName) {
             setStoredName(directName);
-            await AsyncStorage.multiSet([
+            await AppStorage.multiSet([
               ["nanny_name", directName],
               ["user_name", directName],
             ]);
@@ -619,14 +628,15 @@ export default function NannyHomeScreen({
       } catch {
         // keep previously resolved dashboard identity
       }
-      void fetchRateCard();
-      void fetchHireRequests();
-      void fetchNextBooking();
-      void fetchRatingSummary();
-      void fetchWeeklyEarnings();
-      void fetchNotificationCount();
+      const loaders = dashboardLoadersRef.current;
+      void loaders.fetchRateCard();
+      void loaders.fetchHireRequests();
+      void loaders.fetchNextBooking();
+      void loaders.fetchRatingSummary();
+      void loaders.fetchWeeklyEarnings();
+      void loaders.fetchNotificationCount();
       void fetchMessageCount();
-      void checkProfileStatus();
+      void loaders.checkProfileStatus();
     };
     load();
     const unsubscribe = navigation?.addListener?.("focus", load);
@@ -642,8 +652,8 @@ export default function NannyHomeScreen({
 
   useEffect(() => {
     const refreshLiveNannyData = () => {
-      void fetchHireRequests(true);
-      void fetchNotificationCount();
+      void dashboardLoadersRef.current.fetchHireRequests(true);
+      void dashboardLoadersRef.current.fetchNotificationCount();
     };
 
     const interval = setInterval(refreshLiveNannyData, 5000);
@@ -943,9 +953,9 @@ export default function NannyHomeScreen({
     try {
       setRateLoading(true);
       const [tokenRaw, storedNannyId, storedUserId] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("nanny_id"),
-        AsyncStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("nanny_id"),
+        AppStorage.getItem("user_id"),
       ]);
       const token = sanitizeToken(tokenRaw || undefined);
       const effectiveNannyId = String(storedNannyId || storedUserId || "").trim();
@@ -956,7 +966,7 @@ export default function NannyHomeScreen({
         if (!normalized) return false;
         setStoredRates({ morning: normalized, evening: normalized, night: normalized });
         setRateInput(normalized);
-        await AsyncStorage.multiSet([
+        await AppStorage.multiSet([
           ["rate_morning", normalized],
           ["rate_evening", normalized],
           ["rate_night", normalized],
@@ -964,7 +974,7 @@ export default function NannyHomeScreen({
         return true;
       };
 
-      const [savedMorning, savedEvening, savedNight] = await AsyncStorage.multiGet([
+      const [savedMorning, savedEvening, savedNight] = await AppStorage.multiGet([
         "rate_morning",
         "rate_evening",
         "rate_night",
@@ -1037,15 +1047,15 @@ export default function NannyHomeScreen({
   const fetchNotificationCount = async () => {
     try {
       const tokenRaw =
-        (await AsyncStorage.getItem("token")) ||
-        (await AsyncStorage.getItem("nanny_token"));
+        (await AppStorage.getItem("token")) ||
+        (await AppStorage.getItem("nanny_token"));
       const apiKey =
-        (await AsyncStorage.getItem("api_key")) ||
+        (await AppStorage.getItem("api_key")) ||
         getRuntimeApiKey() ||
         undefined;
       const nannyId =
-        (await AsyncStorage.getItem("nanny_id")) ||
-        (await AsyncStorage.getItem("user_id"));
+        (await AppStorage.getItem("nanny_id")) ||
+        (await AppStorage.getItem("user_id"));
       const token = sanitizeToken(tokenRaw || undefined);
 
       if (!token || !nannyId) {
@@ -1113,11 +1123,11 @@ export default function NannyHomeScreen({
 
   const getNannyAuthContext = async () => {
     const [tokenRaw, nannyTokenRaw, apiKeyStored, userIdRaw, nannyIdRaw] = await Promise.all([
-      AsyncStorage.getItem("token"),
-      AsyncStorage.getItem("nanny_token"),
-      AsyncStorage.getItem("api_key"),
-      AsyncStorage.getItem("user_id"),
-      AsyncStorage.getItem("nanny_id"),
+      AppStorage.getItem("token"),
+      AppStorage.getItem("nanny_token"),
+      AppStorage.getItem("api_key"),
+      AppStorage.getItem("user_id"),
+      AppStorage.getItem("nanny_id"),
     ]);
     const token = sanitizeToken(tokenRaw || nannyTokenRaw || undefined);
     const apiKey = String(apiKeyStored || getRuntimeApiKey() || "").trim() || undefined;
@@ -1311,7 +1321,7 @@ export default function NannyHomeScreen({
     try {
       const [{ authHeader, apiKey, nannyId }, canceledRaw] = await Promise.all([
         getNannyAuthContext(),
-        AsyncStorage.getItem("canceled_job_ids"),
+        AppStorage.getItem("canceled_job_ids"),
       ]);
       const effectiveNannyId = String(nannyId || "").trim();
       if (!effectiveNannyId) {
@@ -1469,10 +1479,10 @@ export default function NannyHomeScreen({
   const fetchRatingSummary = async () => {
     try {
       const [token, apiKey, nannyId, userId] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("api_key"),
-        AsyncStorage.getItem("nanny_id"),
-        AsyncStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("api_key"),
+        AppStorage.getItem("nanny_id"),
+        AppStorage.getItem("user_id"),
       ]);
       const effectiveNannyId = nannyId || userId;
       if (!effectiveNannyId) {
@@ -1510,16 +1520,16 @@ export default function NannyHomeScreen({
   const fetchWeeklyEarnings = async () => {
     try {
       const tokenRaw =
-        (await AsyncStorage.getItem("token")) ||
-        (await AsyncStorage.getItem("nanny_token"));
+        (await AppStorage.getItem("token")) ||
+        (await AppStorage.getItem("nanny_token"));
       const token = tokenRaw ? tokenRaw.replace(/"/g, "").trim() : "";
       const apiKey =
-        (await AsyncStorage.getItem("api_key")) ||
+        (await AppStorage.getItem("api_key")) ||
         getRuntimeApiKey() ||
         undefined;
       const nannyId =
-        (await AsyncStorage.getItem("nanny_id")) ||
-        (await AsyncStorage.getItem("user_id"));
+        (await AppStorage.getItem("nanny_id")) ||
+        (await AppStorage.getItem("user_id"));
 
       if (!nannyId) {
         setEarningsByDay(createEmptyWeekEarnings());
@@ -1631,9 +1641,9 @@ export default function NannyHomeScreen({
   const checkProfileStatus = async () => {
     try {
       const [token, apiKey, nannyId] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("api_key"),
-        AsyncStorage.getItem("nanny_id"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("api_key"),
+        AppStorage.getItem("nanny_id"),
       ]);
       if (!nannyId) return;
       const res: any = await checkNannyApprovalStatus(
@@ -1649,7 +1659,7 @@ export default function NannyHomeScreen({
         "";
       const normalizedStatus = String(status).toLowerCase();
       if (normalizedStatus.includes("reject") || normalizedStatus.includes("blacklist")) {
-        await AsyncStorage.multiSet([
+        await AppStorage.multiSet([
           ["nanny_approval_state", "rejected"],
           ["user_verification_status", "blacklisted"],
         ]);
@@ -1659,6 +1669,15 @@ export default function NannyHomeScreen({
       if (routeToVerificationIfRequired(e)) return;
       console.warn("checkProfileStatus failed", e);
     }
+  };
+  dashboardLoadersRef.current = {
+    fetchRateCard,
+    fetchHireRequests,
+    fetchNextBooking,
+    fetchRatingSummary,
+    fetchWeeklyEarnings,
+    fetchNotificationCount,
+    checkProfileStatus,
   };
 
   const openRateEdit = () => {
@@ -1681,9 +1700,9 @@ export default function NannyHomeScreen({
     try {
       setSavingRate(true);
       const [token, nannyId, userId] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("nanny_id"),
-        AsyncStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("nanny_id"),
+        AppStorage.getItem("user_id"),
       ]);
       const effectiveId = nannyId || userId;
       if (!effectiveId) throw new Error("Syttr ID not found. Please sign in again.");
@@ -1695,7 +1714,7 @@ export default function NannyHomeScreen({
         token || undefined
       );
 
-      await AsyncStorage.multiSet([
+      await AppStorage.multiSet([
         ["rate_morning", normalizedRate],
         ["rate_evening", normalizedRate],
         ["rate_night", normalizedRate],

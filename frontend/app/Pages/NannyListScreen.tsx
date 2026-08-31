@@ -1,5 +1,5 @@
-﻿import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Ionicons } from "@expo/vector-icons";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -246,7 +246,7 @@ export default function NannyListScreen({
   const loadNannies = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
-      const token = sanitizeToken((await AsyncStorage.getItem("token")) || undefined);
+      const token = sanitizeToken((await AppStorage.getItem("token")) || undefined);
       const json = await apiRequest<any>("nannies?page=1&per_page=20", {
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -280,7 +280,7 @@ export default function NannyListScreen({
 
   const loadSavedLocation = useCallback(async (): Promise<{ lat: number; lon: number } | null> => {
     try {
-      const [[, latText], [, lonText]] = await AsyncStorage.multiGet([
+      const [[, latText], [, lonText]] = await AppStorage.multiGet([
         "last_location_lat",
         "last_location_lon",
       ]);

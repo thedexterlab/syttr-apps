@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { hp, rf, rs, wp } from "../_utils/responsive";
+import { rf, rs } from "../_utils/responsive";
 // import SafeScreen from "../components/SafeScreen";
 
 type Props = {
@@ -105,7 +105,7 @@ export default function PrivacyPolicyScreen({ navigation }: Props) {
         useNativeDriver: Platform.OS !== "web",
       }),
     ]).start();
-  }, []);
+  }, [fade, scale, slide]);
 
   return (
     <View style={{ flex: 1 }}>
@@ -319,4 +319,3 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: rs(16),  },
 });
-

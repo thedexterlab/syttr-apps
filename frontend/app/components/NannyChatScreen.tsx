@@ -1,6 +1,6 @@
 /// <reference types="react" />
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -23,7 +23,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { apiRequest, BASE_URL, isVerificationRequiredApiError, sanitizeToken } from "../Api";
-import { getPusherDiagnostics, reconnectPusher, subscribeToChat } from "../../lib/pusherClient";
+import { reconnectPusher, subscribeToChat } from "../../lib/pusherClient";
 import { resolveSessionImageUrl } from "../../lib/nannySessionProfile";
 import { rewriteLoopbackAbsoluteUrl } from "../../lib/urlHosts";
 import { rf, rs } from "../utils/responsive";
@@ -518,10 +518,10 @@ export default function NannyChatScreen({
     setLoading(true);
 
     try {
-      const token = sanitizeToken((await AsyncStorage.getItem("token")) || undefined);
-      const apiKey = String((await AsyncStorage.getItem("api_key")) || "").trim() || undefined;
+      const token = sanitizeToken((await AppStorage.getItem("token")) || undefined);
+      const apiKey = String((await AppStorage.getItem("api_key")) || "").trim() || undefined;
       const currentNannyId = normalizeId(
-        nannyId || (await AsyncStorage.getItem("nanny_id"))
+        nannyId || (await AppStorage.getItem("nanny_id"))
       );
       const targetUserId = normalizeId(resolvedUserId || userId);
 
@@ -538,8 +538,6 @@ export default function NannyChatScreen({
       };
 
       if (targetUserId) body.user_id = targetUserId;
-
-      console.log("[NannyChat LOAD] Sending payload:", body);
 
       const json = await apiRequest<any>("chat/messages", {
         method: "POST",
@@ -607,7 +605,7 @@ export default function NannyChatScreen({
   useEffect(() => {
     (async () => {
       try {
-        const typeRaw = await AsyncStorage.getItem("user_type");
+        const typeRaw = await AppStorage.getItem("user_type");
         const type = typeRaw ? typeRaw.toLowerCase() : "";
         if (type === "nanny") {
           setRole("nanny");
@@ -618,8 +616,8 @@ export default function NannyChatScreen({
           return;
         }
         const [storedUserId, storedNannyId] = await Promise.all([
-          AsyncStorage.getItem("user_id"),
-          AsyncStorage.getItem("nanny_id"),
+          AppStorage.getItem("user_id"),
+          AppStorage.getItem("nanny_id"),
         ]);
         if (storedNannyId && !storedUserId) {
           setRole("nanny");
@@ -636,9 +634,9 @@ export default function NannyChatScreen({
 
   const resolveConversationId = async (): Promise<void> => {
     try {
-      const token = sanitizeToken((await AsyncStorage.getItem("token")) || undefined);
+      const token = sanitizeToken((await AppStorage.getItem("token")) || undefined);
       const currentNannyId = normalizeId(
-        nannyId || (await AsyncStorage.getItem("nanny_id"))
+        nannyId || (await AppStorage.getItem("nanny_id"))
       );
       if (!currentNannyId) return;
 
@@ -722,8 +720,7 @@ export default function NannyChatScreen({
       ) {
         setConvId(nextConversationId);
       }
-    } catch (e) {
-      console.log("[NannyChat] resolve conversation error", e);
+    } catch {
     } finally {
       setResolving(false);
     }
@@ -740,7 +737,7 @@ export default function NannyChatScreen({
     let unsubscribe: (() => void) | undefined;
 
     (async () => {
-      const currentNannyId = nannyId || (await AsyncStorage.getItem("nanny_id"));
+      const currentNannyId = nannyId || (await AppStorage.getItem("nanny_id"));
       if (!currentNannyId) return;
 
       const { unsubscribe: off } = subscribeToChat(convIdNum, (chat) => {
@@ -762,7 +759,6 @@ export default function NannyChatScreen({
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active") {
-        console.log("[NannyChat] app resumed, forcing Pusher reconnect", getPusherDiagnostics());
         reconnectPusher("nanny_chat_resumed");
       }
     });
@@ -783,10 +779,10 @@ export default function NannyChatScreen({
     setSending(true);
 
     try {
-      const token = (await AsyncStorage.getItem("token")) || undefined;
-      const apiKey = await AsyncStorage.getItem("api_key") || undefined;
+      const token = (await AppStorage.getItem("token")) || undefined;
+      const apiKey = await AppStorage.getItem("api_key") || undefined;
       const currentNannyId = normalizeId(
-        nannyId || (await AsyncStorage.getItem("nanny_id"))
+        nannyId || (await AppStorage.getItem("nanny_id"))
       );
       const targetUserId = normalizeId(resolvedUserId || userId);
 
@@ -1745,21 +1741,6 @@ function normalizeMessage(
     isMe = isTrueLike(msg.is_me ?? msg.isMe);
   } else {
     isMe = false;
-  }
-
-  if (__DEV__) {
-    console.log("MSG DEBUG:", {
-      text,
-      sender,
-      user_id: msg.user_id,
-      nanny_id: msg.nanny_id,
-      senderUserId,
-      senderNannyId,
-      currentNannyId,
-      role: _role,
-      hasIsMeFlag,
-      isMe,
-    });
   }
 
   const attachment = extractAttachment(msg);

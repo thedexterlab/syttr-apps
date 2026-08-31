@@ -1,9 +1,9 @@
 import { Fonts } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -255,13 +255,13 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
           userNameRaw,
         ] =
           await Promise.all([
-            AsyncStorage.getItem("nanny_name"),
-            AsyncStorage.getItem("nanny_email"),
-            AsyncStorage.getItem("nanny_address"),
-            AsyncStorage.getItem("nanny_city"),
-            AsyncStorage.getItem("nanny_phone"),
-            AsyncStorage.getItem("signup_nanny_draft"),
-            AsyncStorage.getItem("user_name"),
+            AppStorage.getItem("nanny_name"),
+            AppStorage.getItem("nanny_email"),
+            AppStorage.getItem("nanny_address"),
+            AppStorage.getItem("nanny_city"),
+            AppStorage.getItem("nanny_phone"),
+            AppStorage.getItem("signup_nanny_draft"),
+            AppStorage.getItem("user_name"),
           ]);
 
         if (cancelled) return;
@@ -561,12 +561,12 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
     return exact || "Other";
   };
 
-  const selectedCountryCode = (value?: string | null) => {
+  const selectedCountryCode = useCallback((value?: string | null) => {
     const normalized = String(value || "").trim().toLowerCase();
     if (normalized.includes("united states") || normalized === "usa") return "us";
     if (normalized.includes("canada")) return "ca";
     return "";
-  };
+  }, []);
 
   const formatAddressLine = (
     street?: string,
@@ -575,7 +575,7 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
     stateText?: string,
   ) => [street, cityText, stateText, countryText].filter(Boolean).join(", ");
 
-  const fetchLocationSuggestions = async (
+  const fetchLocationSuggestions = useCallback(async (
     query: string,
     countryText?: string
   ): Promise<LocationSuggestion[]> => {
@@ -631,7 +631,7 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
     } catch {
       return [];
     }
-  };
+  }, [availableStates, selectedCountryCode, state]);
 
   const fetchLocationDetails = async (placeId: string) => {
     if (!GOOGLE_MAPS_KEY || !placeId) return null;
@@ -730,7 +730,7 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [address, country, state, availableStates, showLocationSuggestions]);
+  }, [address, country, fetchLocationSuggestions, showLocationSuggestions]);
 
   const fetchPlacesAddressWeb = async (latitude: number, longitude: number) => {
     if (!GOOGLE_MAPS_KEY || typeof document === "undefined") return null;
@@ -961,12 +961,12 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
     setLoading(true);
 
     try {
-      const token = await AsyncStorage.getItem("token");
+      const token = await AppStorage.getItem("token");
       const nannyId =
-        (await AsyncStorage.getItem("nanny_id")) ||
-        (await AsyncStorage.getItem("id"));
+        (await AppStorage.getItem("nanny_id")) ||
+        (await AppStorage.getItem("id"));
 
-      const existingNannyEmail = ((await AsyncStorage.getItem("nanny_email")) || "")
+      const existingNannyEmail = ((await AppStorage.getItem("nanny_email")) || "")
         .trim()
         .toLowerCase();
 
@@ -1103,8 +1103,8 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
 
       const derivedToken = result?.token || token || "";
 
-      await AsyncStorage.setItem("nanny_profile_payload", JSON.stringify(payload));
-      await AsyncStorage.removeItem("signup_nanny_draft");
+      await AppStorage.setItem("nanny_profile_payload", JSON.stringify(payload));
+      await AppStorage.removeItem("signup_nanny_draft");
 
       const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
 
@@ -1147,9 +1147,9 @@ const CreateNannyProfileScreen: React.FC<Props> = ({
         storagePairs.push(["token", String(derivedToken)]);
       }
 
-      await AsyncStorage.multiSet(storagePairs);
+      await AppStorage.multiSet(storagePairs);
 
-      await AsyncStorage.multiRemove([
+      await AppStorage.multiRemove([
         "user_id",
         "user_name",
         "user_email",

@@ -1,8 +1,8 @@
 /// <reference types="react" />
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -66,11 +66,11 @@ export default function ParentJobRequestsScreen({
   const [selectedRequestKeys, setSelectedRequestKeys] = useState<Set<string>>(new Set());
   const [actionsMenuVisible, setActionsMenuVisible] = useState(false);
 
-  const syncRequestCountFromItems = (list: NotificationItem[]) => {
+  const syncRequestCountFromItems = useCallback((list: NotificationItem[]) => {
     setRequestCount(list.filter((item) => !isNotificationRead(item)).length);
-  };
+  }, []);
 
-  const fetchRequests = async () => {
+  const fetchRequests = useCallback(async () => {
     setLoading(true);
     try {
       const requestsOnly = await fetchParentRequestNotifications();
@@ -90,7 +90,7 @@ export default function ParentJobRequestsScreen({
     } finally {
       setLoading(false);
     }
-  };
+  }, [onRequireVerification, syncRequestCountFromItems]);
 
   const loadMessageCount = async () => {
     try {
@@ -104,9 +104,9 @@ export default function ParentJobRequestsScreen({
   const loadNotificationCount = async () => {
     try {
       const [token, apiKey, userId] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("api_key"),
-        AsyncStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("api_key"),
+        AppStorage.getItem("user_id"),
       ]);
 
       if (!userId) {
@@ -145,7 +145,7 @@ export default function ParentJobRequestsScreen({
     });
 
     return () => unsubscribe?.();
-  }, [navigation]);
+  }, [fetchRequests, navigation]);
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
@@ -345,9 +345,9 @@ export default function ParentJobRequestsScreen({
     if (!ids.length) return;
 
     const [token, apiKey, userId] = await Promise.all([
-      AsyncStorage.getItem("token"),
-      AsyncStorage.getItem("api_key"),
-      AsyncStorage.getItem("user_id"),
+      AppStorage.getItem("token"),
+      AppStorage.getItem("api_key"),
+      AppStorage.getItem("user_id"),
     ]);
 
     const cleanToken = sanitizeToken(token || undefined);

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import React, { useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -56,7 +56,7 @@ export default function ParentNannyProfileScreen({ nanny, onBack }: Props) {
   useEffect(() => {
     if (nanny) return;
     const loadSelf = async () => {
-      const entries = await AsyncStorage.multiGet([
+      const entries = await AppStorage.multiGet([
         "nanny_id",
         "nanny_name",
         "user_name",

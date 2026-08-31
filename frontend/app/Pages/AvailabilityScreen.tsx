@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import DateTimePicker, {
   DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
@@ -412,7 +412,7 @@ const AvailabilityScreen: React.FC<Props> = ({ onBack, onSuccess, onDone }) => {
     const incomingAvailability = data?.availability ?? data?.data ?? data;
     let availabilityList = Array.isArray(incomingAvailability) ? incomingAvailability : [];
     if (availabilityList.length && availabilityList[0]?.syttr_profile_id) {
-      const grouped: Record<string, { day?: string; date?: string; time_slots: Array<{ period?: string; time?: string; start_time?: string; end_time?: string }> }> = {};
+      const grouped: Record<string, { day?: string; date?: string; time_slots: { period?: string; time?: string; start_time?: string; end_time?: string }[] }> = {};
       availabilityList.forEach((row: any) => {
         const key = row.date ? `date:${row.date}` : `day:${row.day || ""}`;
         if (!grouped[key]) {
@@ -464,10 +464,10 @@ const AvailabilityScreen: React.FC<Props> = ({ onBack, onSuccess, onDone }) => {
   const fetchAvailabilityFromApi = async () => {
     try {
       const rawToken =
-        (await AsyncStorage.getItem("token")) ||
-        (await AsyncStorage.getItem("nanny_token"));
+        (await AppStorage.getItem("token")) ||
+        (await AppStorage.getItem("nanny_token"));
       const token = rawToken ? rawToken.replace(/"/g, "").trim() : "";
-      const nannyId = await AsyncStorage.getItem("nanny_id");
+      const nannyId = await AppStorage.getItem("nanny_id");
       if (!nannyId) return;
 
       const json = await getNannyAvailability(token || undefined, nannyId);
@@ -495,7 +495,7 @@ const AvailabilityScreen: React.FC<Props> = ({ onBack, onSuccess, onDone }) => {
       else setMode("weekly");
 
       if (parsed.rawData) {
-        await AsyncStorage.setItem(
+        await AppStorage.setItem(
           "nanny_availability",
           JSON.stringify({
             availability: parsed.availabilityList,
@@ -533,7 +533,7 @@ const AvailabilityScreen: React.FC<Props> = ({ onBack, onSuccess, onDone }) => {
   };
 
   const applyCalendarSlots = (
-    list: Array<{ date: string; times?: string[]; slots?: CalendarSlotRange[] }>,
+    list: { date: string; times?: string[]; slots?: CalendarSlotRange[] }[],
     preserveWeekly = false
   ) => {
     if (!preserveWeekly) {
@@ -563,7 +563,7 @@ const AvailabilityScreen: React.FC<Props> = ({ onBack, onSuccess, onDone }) => {
   /* ---------- LOCAL ---------- */
   const loadLocalAvailability = async () => {
     try {
-      const saved = await AsyncStorage.getItem("nanny_availability");
+      const saved = await AppStorage.getItem("nanny_availability");
       if (!saved) return;
       const json = JSON.parse(saved);
       const parsed = parseAvailabilityData(json);
@@ -609,10 +609,10 @@ const AvailabilityScreen: React.FC<Props> = ({ onBack, onSuccess, onDone }) => {
 
     try {
       const rawToken =
-        (await AsyncStorage.getItem("token")) ||
-        (await AsyncStorage.getItem("nanny_token"));
+        (await AppStorage.getItem("token")) ||
+        (await AppStorage.getItem("nanny_token"));
       const token = rawToken ? rawToken.replace(/"/g, "").trim() : "";
-      const nannyId = await AsyncStorage.getItem("nanny_id");
+      const nannyId = await AppStorage.getItem("nanny_id");
       if (!nannyId) {
         Alert.alert("Error", "Missing nanny id. Please log in again.");
         return;
@@ -701,14 +701,14 @@ const AvailabilityScreen: React.FC<Props> = ({ onBack, onSuccess, onDone }) => {
       await updateNannyAvailability(payload, token || undefined);
       // Refresh from server to confirm
       await fetchAvailabilityFromApi();
-      await AsyncStorage.setItem(
+      await AppStorage.setItem(
         "nanny_availability",
         JSON.stringify(payload)
       );
 
       const handleSuccess = onSuccess || onDone;
       if (handleSuccess) {
-        // eslint-disable-next-line no-console
+         
         console.log("[Availability] save success -> next step");
         handleSuccess();
       } else {
@@ -1219,7 +1219,7 @@ const buildMonthGrid = (anchor: Date) => {
   const start = first.getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-  const cells: Array<Date | null> = [];
+  const cells: (Date | null)[] = [];
   for (let i = 0; i < start; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) {
     cells.push(new Date(year, month, d));
@@ -1398,12 +1398,12 @@ const buildCalendarDisplayRanges = (slots: CalendarSlotRange[]) => {
   const normalized = normalizeCalendarRanges(slots);
   if (!normalized.length) return [];
 
-  const groups: Array<{
+  const groups: {
     start: number;
     end: number;
     label: string;
     slots: CalendarSlotRange[];
-  }> = [];
+  }[] = [];
 
   let currentSlots: CalendarSlotRange[] = [normalized[0]];
   let currentStart = timeToMinutes(normalized[0].start_time);

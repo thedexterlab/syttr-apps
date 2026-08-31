@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useState } from "react";
 import {
@@ -43,9 +43,9 @@ export default function ForgotPasswordScreen({ navigation, showLoginLink, onBack
     (async () => {
       if (email.trim()) return;
       const [userEmail, nannyEmail, genericEmail] = await Promise.all([
-        AsyncStorage.getItem("user_email"),
-        AsyncStorage.getItem("nanny_email"),
-        AsyncStorage.getItem("email"),
+        AppStorage.getItem("user_email"),
+        AppStorage.getItem("nanny_email"),
+        AppStorage.getItem("email"),
       ]);
       const resolved = String(userEmail || nannyEmail || genericEmail || "").trim();
       if (mounted && resolved) {
@@ -69,7 +69,7 @@ export default function ForgotPasswordScreen({ navigation, showLoginLink, onBack
     }
     setLoading(true);
     try {
-      const token = await AsyncStorage.getItem("token");
+      const token = await AppStorage.getItem("token");
       const response = await sendPasswordResetCode(
         { email: trimmedEmail },
         token || undefined
@@ -114,7 +114,7 @@ export default function ForgotPasswordScreen({ navigation, showLoginLink, onBack
 
     try {
       setLoading(true);
-      const token = await AsyncStorage.getItem("token");
+      const token = await AppStorage.getItem("token");
       const targetEmail = email.trim();
       if (!isValidEmail(targetEmail)) {
         throw new Error("Please enter a valid email address.");

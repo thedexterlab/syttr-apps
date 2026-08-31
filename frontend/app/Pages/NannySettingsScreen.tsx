@@ -1,5 +1,5 @@
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useState } from "react";
 import {
@@ -129,7 +129,7 @@ export default function NannySettingsScreen({
   useEffect(() => {
     const loadProfile = async () => {
       try {
-        const entries = await AsyncStorage.multiGet([
+        const entries = await AppStorage.multiGet([
           "nanny_name",
           "user_name",
           "fullname",
@@ -196,7 +196,7 @@ export default function NannySettingsScreen({
         await onLogout();
       }
     } finally {
-      await AsyncStorage.clear();
+      await AppStorage.clear();
       if (navigation?.reset) {
         navigation.reset({ index: 0, routes: [{ name: "Login" }] });
       }
@@ -212,7 +212,7 @@ export default function NannySettingsScreen({
 
   const doDeactivateAccount = async () => {
     try {
-      const token = await AsyncStorage.getItem("token");
+      const token = await AppStorage.getItem("token");
       await deactivateAccount(token || undefined);
       if (Platform.OS === "web") {
         window.alert(

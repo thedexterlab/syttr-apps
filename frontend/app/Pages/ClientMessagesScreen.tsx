@@ -1,7 +1,7 @@
 /// <reference types="react" />
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { useEffect, useState } from "react";
+import AppStorage from "@/lib/storage";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -141,68 +141,14 @@ export default function ClientMessagesScreen({
   const [selectionMode, setSelectionMode] = useState<boolean>(false);
   const [selectedThreadIds, setSelectedThreadIds] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    (async () => {
-      await loadThreads();
-      await loadRequestCount();
-      await loadNotificationCount();
-      await loadMessageCount();
-    })();
-  }, []);
-
-  useEffect(() => {
-    const unsubscribe = navigation?.addListener?.("focus", () => {
-      void loadThreads();
-      void loadRequestCount();
-      void loadNotificationCount();
-      void loadMessageCount();
-    });
-    return () => unsubscribe?.();
-  }, [navigation]);
-
-  useEffect(() => {
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") {
-        void loadThreads();
-        void loadNotificationCount();
-        void loadMessageCount();
-      }
-    });
-    return () => sub.remove();
-  }, []);
-
-  useEffect(() => {
-    let unsub = () => {};
-
-    (async () => {
-      const userId = normalizeStoredId(
-        (await AsyncStorage.getItem("user_id")) || (await AsyncStorage.getItem("id"))
-      );
-      if (!userId) return;
-
-      const sub = subscribeToNotifications(userId, (payload) => {
-        const type = String(payload?.type || payload?.notification?.type || "").trim().toLowerCase();
-        if (type === "chat_message" || type === "chat") {
-          void loadThreads();
-          void loadMessageCount();
-        }
-      });
-      unsub = sub.unsubscribe;
-    })();
-
-    return () => {
-      unsub();
-    };
-  }, []);
-
   /* ----------------------------- LOAD THREADS ----------------------------- */
 
-  const loadThreads = async (): Promise<void> => {
+  const loadThreads = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
-      const token = sanitizeToken((await AsyncStorage.getItem("token")) || undefined);
+      const token = sanitizeToken((await AppStorage.getItem("token")) || undefined);
       const userId = normalizeStoredId(
-        (await AsyncStorage.getItem("user_id")) || (await AsyncStorage.getItem("id"))
+        (await AppStorage.getItem("user_id")) || (await AppStorage.getItem("id"))
       );
 
       const payloads: Record<string, any>[] = token
@@ -256,13 +202,12 @@ export default function ClientMessagesScreen({
         onRequireVerification?.();
         return;
       }
-      console.log("threads load error", e);
       Alert.alert("Messages", "We couldn't load your conversations. Please pull to refresh.");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [onRequireVerification]);
 
   /* ----------------------------- REFRESH ----------------------------- */
 
@@ -295,9 +240,9 @@ export default function ClientMessagesScreen({
   const loadNotificationCount = async () => {
     try {
       const [token, apiKey, userId] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("api_key"),
-        AsyncStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("api_key"),
+        AppStorage.getItem("user_id"),
       ]);
 
       if (!userId) {
@@ -324,6 +269,60 @@ export default function ClientMessagesScreen({
       setNotificationCount(0);
     }
   };
+
+  useEffect(() => {
+    void (async () => {
+      await loadThreads();
+      await loadRequestCount();
+      await loadNotificationCount();
+      await loadMessageCount();
+    })();
+  }, [loadThreads]);
+
+  useEffect(() => {
+    const unsubscribe = navigation?.addListener?.("focus", () => {
+      void loadThreads();
+      void loadRequestCount();
+      void loadNotificationCount();
+      void loadMessageCount();
+    });
+    return () => unsubscribe?.();
+  }, [loadThreads, navigation]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        void loadThreads();
+        void loadNotificationCount();
+        void loadMessageCount();
+      }
+    });
+    return () => sub.remove();
+  }, [loadThreads]);
+
+  useEffect(() => {
+    let unsub = () => {};
+
+    void (async () => {
+      const userId = normalizeStoredId(
+        (await AppStorage.getItem("user_id")) || (await AppStorage.getItem("id"))
+      );
+      if (!userId) return;
+
+      const sub = subscribeToNotifications(userId, (payload) => {
+        const type = String(payload?.type || payload?.notification?.type || "").trim().toLowerCase();
+        if (type === "chat_message" || type === "chat") {
+          void loadThreads();
+          void loadMessageCount();
+        }
+      });
+      unsub = sub.unsubscribe;
+    })();
+
+    return () => {
+      unsub();
+    };
+  }, [loadThreads]);
 
   /* ----------------------------- SEARCH ----------------------------- */
 

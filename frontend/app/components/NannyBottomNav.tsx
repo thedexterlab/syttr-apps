@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import React, { useEffect, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -61,12 +61,12 @@ const toStoredIdSet = (raw: string | null): Set<string> => {
 const fetchUnreadNotificationCount = async (): Promise<number> => {
   const [tokenRaw, nannyTokenRaw, apiKeyStored, userIdRaw, nannyIdRaw, hiddenRaw] =
     await Promise.all([
-      AsyncStorage.getItem("token"),
-      AsyncStorage.getItem("nanny_token"),
-      AsyncStorage.getItem("api_key"),
-      AsyncStorage.getItem("user_id"),
-      AsyncStorage.getItem("nanny_id"),
-      AsyncStorage.getItem(HIDDEN_NOTIFICATIONS_KEY),
+      AppStorage.getItem("token"),
+      AppStorage.getItem("nanny_token"),
+      AppStorage.getItem("api_key"),
+      AppStorage.getItem("user_id"),
+      AppStorage.getItem("nanny_id"),
+      AppStorage.getItem(HIDDEN_NOTIFICATIONS_KEY),
     ]);
 
   const token = sanitizeToken(tokenRaw || nannyTokenRaw || undefined);
@@ -97,11 +97,11 @@ const fetchUnreadNotificationCount = async (): Promise<number> => {
   }).length;
 };
 
-const NAV_ITEMS: Array<{
+const NAV_ITEMS: {
   key: NannyNavKey;
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
-}> = [
+}[] = [
   { key: "Home", label: "Home", icon: "home-outline" },
   { key: "Jobs", label: "Jobs", icon: "briefcase-outline" },
   { key: "Calendar", label: "Calendar", icon: "calendar-outline" },

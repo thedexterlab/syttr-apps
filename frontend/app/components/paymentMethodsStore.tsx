@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { useCallback, useEffect, useState } from "react";
 import { apiRequest, BASE_URL, getRuntimeApiKey, sanitizeToken } from "../Api";
 
@@ -91,7 +91,7 @@ const looksLikePublicUserId = (value?: string | null) => {
 
 const looksNumericOnly = (value?: string | null) => /^\d+$/.test(cleanStoredValue(value));
 
-const pickBestUserId = (candidates: Array<string | null | undefined>) => {
+const pickBestUserId = (candidates: (string | null | undefined)[]) => {
   for (const candidate of candidates) {
     if (looksLikePublicUserId(candidate)) {
       return cleanStoredValue(candidate).toUpperCase();
@@ -121,16 +121,16 @@ export function usePaymentMethodsStore() {
       userEmailStored,
       nannyEmailStored,
     ] = await Promise.all([
-      AsyncStorage.getItem("token"),
-      AsyncStorage.getItem("nanny_token"),
-      AsyncStorage.getItem("access_token"),
-      AsyncStorage.getItem("api_key"),
-      AsyncStorage.getItem("user_type"),
-      AsyncStorage.getItem("user_id"),
-      AsyncStorage.getItem("nanny_id"),
-      AsyncStorage.getItem("id"),
-      AsyncStorage.getItem("user_email"),
-      AsyncStorage.getItem("nanny_email"),
+      AppStorage.getItem("token"),
+      AppStorage.getItem("nanny_token"),
+      AppStorage.getItem("access_token"),
+      AppStorage.getItem("api_key"),
+      AppStorage.getItem("user_type"),
+      AppStorage.getItem("user_id"),
+      AppStorage.getItem("nanny_id"),
+      AppStorage.getItem("id"),
+      AppStorage.getItem("user_email"),
+      AppStorage.getItem("nanny_email"),
     ]);
     const token = sanitizeToken(rawToken || rawNannyToken || rawAccessToken || undefined);
     const apiKey =
@@ -151,7 +151,7 @@ export function usePaymentMethodsStore() {
       userType === "nanny" || userType === "syttr" ? nannyEmailStored || userEmailStored : userEmailStored || nannyEmailStored
     ).toLowerCase();
 
-    const repairSets: Array<[string, string]> = [];
+    const repairSets: [string, string][] = [];
     if (token && cleanStoredValue(rawToken) !== token) {
       repairSets.push(["token", token]);
     }
@@ -164,7 +164,7 @@ export function usePaymentMethodsStore() {
       }
     }
     if (repairSets.length) {
-      await AsyncStorage.multiSet(repairSets);
+      await AppStorage.multiSet(repairSets);
     }
 
     return {

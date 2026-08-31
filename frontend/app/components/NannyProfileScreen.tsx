@@ -1,6 +1,5 @@
-﻿import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
+import AppStorage from "@/lib/storage";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -132,7 +131,7 @@ const buildAvailabilityDisplayGroups = (slots: AvailabilitySlot[]) => {
       .map((label) => ({ label }));
   }
 
-  const groups: Array<{ label: string }> = [];
+  const groups: { label: string }[] = [];
   let currentStart = sorted[0].start as Date;
   let currentEnd = sorted[0].end as Date;
 
@@ -166,32 +165,6 @@ type RateCard = {
   nanny_hourly_rate?: string | number;
 };
 
-const getMinuteMarks = (size: number) => {
-  const radius = size * 0.39;
-  const center = size / 2;
-  const marks = [];
-  for (let i = 0; i < 60; i += 5) {
-    const angle = (i / 60) * 2 * Math.PI - Math.PI / 2;
-    const x = center + radius * Math.cos(angle) - size * 0.073;
-    const y = center + radius * Math.sin(angle) - size * 0.073;
-    marks.push({ value: i, x, y });
-  }
-  return marks;
-};
-
-const getHourMarks = (size: number) => {
-  const radius = size * 0.318;
-  const center = size / 2;
-  const marks = [];
-  for (let i = 1; i <= 12; i += 1) {
-    const angle = (i / 12) * 2 * Math.PI - Math.PI / 2;
-    const x = center + radius * Math.cos(angle) - size * 0.073;
-    const y = center + radius * Math.sin(angle) - size * 0.073;
-    marks.push({ value: i, x, y });
-  }
-  return marks;
-};
-
 const normalizeAddressPart = (value: string) =>
   value
     .toLowerCase()
@@ -199,7 +172,7 @@ const normalizeAddressPart = (value: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-const dedupeAddressParts = (parts: Array<string | null | undefined>) => {
+const dedupeAddressParts = (parts: (string | null | undefined)[]) => {
   const dedupedRaw: string[] = [];
   const dedupedNorm: string[] = [];
 
@@ -633,8 +606,6 @@ export default function NannyProfileScreen({
   onRequireVerification,
 }: Props) {
   const { width, height } = useWindowDimensions();
-  const isVerySmall = width <= 320;
-  const isSmall = width <= 360;
   const isTablet = width >= 768;
   const isLandscape = width > height;
   const avatarSize = Math.min(isTablet ? width * 0.2 : width * 0.25, isTablet ? rs(130) : rs(110));
@@ -684,6 +655,15 @@ export default function NannyProfileScreen({
     reviews: RatingReview[];
   }>({ average: null, totalReviews: null, jobsCount: null, ratersCount: null, reviews: [] });
   const profileScrollRef = useRef<ScrollView | null>(null);
+  const profileLoadersRef = useRef<{
+    loadProfile: () => Promise<void>;
+    loadChildren: () => Promise<unknown>;
+    fetchHirePaymentMethods: () => Promise<boolean | null>;
+  }>({
+    loadProfile: async () => {},
+    loadChildren: async () => {},
+    fetchHirePaymentMethods: async () => null,
+  });
   const [activeProfileSection, setActiveProfileSection] = useState<ProfileSectionKey>("about");
   const [profileSectionOffsets, setProfileSectionOffsets] = useState<Record<ProfileSectionKey, number>>({
     about: 0,
@@ -751,7 +731,7 @@ export default function NannyProfileScreen({
 
     (async () => {
       const userId = normalizeIdValue(
-        (await AsyncStorage.getItem("user_id")) || (await AsyncStorage.getItem("id"))
+        (await AppStorage.getItem("user_id")) || (await AppStorage.getItem("id"))
       );
       if (!active) return;
       setCurrentUserId(String(userId || ""));
@@ -769,7 +749,7 @@ export default function NannyProfileScreen({
 
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(hireDraftStorageKey);
+        const raw = await AppStorage.getItem(hireDraftStorageKey);
         if (!raw || !active) return;
         const draft: HireRequestDraft | null = JSON.parse(raw);
         if (!draft || typeof draft !== "object") return;
@@ -810,7 +790,7 @@ export default function NannyProfileScreen({
       selectedChildIds,
     };
 
-    AsyncStorage.setItem(hireDraftStorageKey, JSON.stringify(draft)).catch(() => {
+    AppStorage.setItem(hireDraftStorageKey, JSON.stringify(draft)).catch(() => {
       // ignore storage failures
     });
   }, [
@@ -825,21 +805,21 @@ export default function NannyProfileScreen({
   ]);
 
   const loadLocationLabel = async () => {
-    const storedLabel = await AsyncStorage.getItem("last_location_label");
+    const storedLabel = await AppStorage.getItem("last_location_label");
     if (storedLabel) {
       setLocationLabel(sanitizeLocationLabel(storedLabel));
       return;
     }
-    const address = await AsyncStorage.getItem("user_address");
-    const city = await AsyncStorage.getItem("user_city");
-    const country = await AsyncStorage.getItem("user_country");
+    const address = await AppStorage.getItem("user_address");
+    const city = await AppStorage.getItem("user_city");
+    const country = await AppStorage.getItem("user_country");
     const fallback = sanitizeLocationLabel([address || city, country].filter(Boolean).join(", "));
     if (fallback) {
       setLocationLabel(fallback);
       return;
     }
-    const latText = await AsyncStorage.getItem("last_location_lat");
-    const lonText = await AsyncStorage.getItem("last_location_lon");
+    const latText = await AppStorage.getItem("last_location_lat");
+    const lonText = await AppStorage.getItem("last_location_lon");
     const lat = latText ? Number(latText) : NaN;
     const lon = lonText ? Number(lonText) : NaN;
     if (Number.isFinite(lat) && Number.isFinite(lon)) {
@@ -850,10 +830,10 @@ export default function NannyProfileScreen({
   const fetchHirePaymentMethods = async (): Promise<boolean | null> => {
     try {
       setCheckingPaymentMethod(true);
-      const token = sanitizeToken((await AsyncStorage.getItem("token")) || undefined);
+      const token = sanitizeToken((await AppStorage.getItem("token")) || undefined);
       const apiKey = getRuntimeApiKey();
-      const userId = normalizeIdValue(await AsyncStorage.getItem("user_id"));
-      const userEmail = String((await AsyncStorage.getItem("user_email")) || "").trim();
+      const userId = normalizeIdValue(await AppStorage.getItem("user_id"));
+      const userEmail = String((await AppStorage.getItem("user_email")) || "").trim();
       const queryParts = [
         ...(userId ? [`user_id=${encodeURIComponent(userId)}`] : []),
         ...(!userId && userEmail ? [`user_email=${encodeURIComponent(userEmail)}`] : []),
@@ -900,20 +880,20 @@ export default function NannyProfileScreen({
   };
 
   useEffect(() => {
-    loadProfile();
-    loadChildren();
-    loadLocationLabel();
+    void profileLoadersRef.current.loadProfile();
+    void profileLoadersRef.current.loadChildren();
+    void loadLocationLabel();
   }, []);
 
   useEffect(() => {
     if (!showHire) return;
     if (String(locationLabel || "").trim()) return;
     void loadLocationLabel();
-  }, [showHire]);
+  }, [locationLabel, showHire]);
 
   useEffect(() => {
     if (!showHire) return;
-    void fetchHirePaymentMethods();
+    void profileLoadersRef.current.fetchHirePaymentMethods();
   }, [showHire]);
 
   useEffect(() => {
@@ -934,7 +914,7 @@ export default function NannyProfileScreen({
 
     (async () => {
       try {
-        const tokenRaw = await AsyncStorage.getItem("token");
+        const tokenRaw = await AppStorage.getItem("token");
         const cleanToken = tokenRaw
           ? tokenRaw.replace(/^Bearer\s+/i, "").replace(/"/g, "").trim()
           : "";
@@ -1012,7 +992,7 @@ export default function NannyProfileScreen({
     setLoading(true);
     try {
       const currentNanny = normalizeNanny(route?.params?.nanny || nanny || null);
-      const token = await AsyncStorage.getItem("token");
+      const token = await AppStorage.getItem("token");
       const cleanToken = sanitizeToken(token || undefined);
       const authHeaders: Record<string, string> = cleanToken
         ? { Authorization: `Bearer ${cleanToken}` }
@@ -1098,16 +1078,17 @@ export default function NannyProfileScreen({
       setLoading(false);
     }
   };
+  profileLoadersRef.current = { loadProfile, loadChildren, fetchHirePaymentMethods };
 
   const isVerificationPending = async () => {
-    const raw = await AsyncStorage.getItem("user_verification_status");
+    const raw = await AppStorage.getItem("user_verification_status");
     const val = (raw || "").toLowerCase().trim();
     return val === "pending" || val === "app-pending";
   };
 
   const loadFavoriteState = async (id: string | number) => {
     try {
-      const raw = await AsyncStorage.getItem(FAVORITES_KEY);
+      const raw = await AppStorage.getItem(FAVORITES_KEY);
       const parsed = raw ? JSON.parse(raw) : [];
       const list = Array.isArray(parsed) ? parsed : [];
       const targetId = String(id || "").trim();
@@ -1123,10 +1104,10 @@ export default function NannyProfileScreen({
 	    if (!nanny?.id) return;
 	    try {
       const [userId, token] = await Promise.all([
-        AsyncStorage.getItem("user_id"),
-        AsyncStorage.getItem("token"),
+        AppStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
       ]);
-      const raw = await AsyncStorage.getItem(FAVORITES_KEY);
+      const raw = await AppStorage.getItem(FAVORITES_KEY);
       const parsed = raw ? JSON.parse(raw) : [];
       const list = Array.isArray(parsed) ? parsed : [];
       const targetId = String(nanny.id || "").trim();
@@ -1175,7 +1156,7 @@ export default function NannyProfileScreen({
           },
         ];
       }
-      await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
+      await AppStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
       setIsFavorite(!exists);
     } catch {
       Alert.alert("Favorites", "Unable to update favorites.");
@@ -1407,7 +1388,7 @@ export default function NannyProfileScreen({
   const clearHireDraft = async () => {
     if (!hireDraftStorageKey) return;
     try {
-      await AsyncStorage.removeItem(hireDraftStorageKey);
+      await AppStorage.removeItem(hireDraftStorageKey);
     } catch {
       // ignore storage failures
     }
@@ -1416,13 +1397,13 @@ export default function NannyProfileScreen({
   const persistHireLocation = async (label: string, lat?: number, lon?: number) => {
     const trimmed = (label || "").trim();
     if (!trimmed) return;
-    const pairs: Array<[string, string]> = [["last_location_label", trimmed]];
+    const pairs: [string, string][] = [["last_location_label", trimmed]];
     if (Number.isFinite(lat) && Number.isFinite(lon)) {
       pairs.push(["last_location_lat", String(lat)]);
       pairs.push(["last_location_lon", String(lon)]);
     }
     try {
-      await AsyncStorage.multiSet(pairs);
+      await AppStorage.multiSet(pairs);
     } catch {
       // ignore storage failures
     }
@@ -1491,7 +1472,7 @@ export default function NannyProfileScreen({
     if (!normalizedParentId || !normalizedNannyId) return undefined;
 
     const [tokenRaw] = await Promise.all([
-      AsyncStorage.getItem("token"),
+      AppStorage.getItem("token"),
     ]);
     const cleanToken = sanitizeToken(tokenRaw || undefined);
 
@@ -1526,7 +1507,7 @@ export default function NannyProfileScreen({
   };
 
   const handleMessagePress = async () => {
-    const userId = normalizeIdValue(await AsyncStorage.getItem("user_id"));
+    const userId = normalizeIdValue(await AppStorage.getItem("user_id"));
     const targetNannyId = normalizeIdValue(nanny?.nanny_id || nanny?.id || nannyId);
     if (!targetNannyId) {
       Alert.alert("Message", "Unable to open chat for this Syttr.");
@@ -1906,7 +1887,7 @@ export default function NannyProfileScreen({
             }
             setHireLoading(true);
             try {
-              const userId = normalizeIdValue(await AsyncStorage.getItem("user_id"));
+              const userId = normalizeIdValue(await AppStorage.getItem("user_id"));
               if (!userId) {
                 Alert.alert("Missing info", "Please log in again.");
                 return;
@@ -1921,8 +1902,8 @@ export default function NannyProfileScreen({
                 Alert.alert("Missing info", "Please enter a location.");
                 return;
               }
-              const latText = await AsyncStorage.getItem("last_location_lat");
-              const lonText = await AsyncStorage.getItem("last_location_lon");
+              const latText = await AppStorage.getItem("last_location_lat");
+              const lonText = await AppStorage.getItem("last_location_lon");
               const lat = latText ? Number(latText) : NaN;
               const lon = lonText ? Number(lonText) : NaN;
               await persistHireLocation(
@@ -1937,9 +1918,9 @@ export default function NannyProfileScreen({
                 return;
               }
               const priceToSend = Number(computedTotal);
-              const token = sanitizeToken(await AsyncStorage.getItem("token"));
+              const token = sanitizeToken(await AppStorage.getItem("token"));
               const apiKey =
-                String((await AsyncStorage.getItem("api_key")) || getRuntimeApiKey() || "").trim();
+                String((await AppStorage.getItem("api_key")) || getRuntimeApiKey() || "").trim();
               const payload: Record<string, any> = {
                 nanny_id: nannyTargetId,
                 user_id: userId,
@@ -2136,7 +2117,7 @@ const buildMonthDays = (anchor: Date) => {
   const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
   const startDay = first.getDay();
   const totalDays = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate();
-  const cells: Array<Date | null> = [];
+  const cells: (Date | null)[] = [];
   for (let i = 0; i < startDay; i += 1) cells.push(null);
   for (let d = 1; d <= totalDays; d += 1) {
     cells.push(new Date(anchor.getFullYear(), anchor.getMonth(), d));

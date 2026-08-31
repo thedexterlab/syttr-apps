@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useMemo, useState } from "react";
 import { Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -97,12 +97,12 @@ export default function NannyJobDetailScreen({
     const loadDetails = async () => {
       try {
         setDetailsLoading(true);
-        const token = sanitizeToken((await AsyncStorage.getItem("token")) || undefined);
-        const storedNannyId = await AsyncStorage.getItem("nanny_id");
-        const storedUserId = await AsyncStorage.getItem("user_id");
+        const token = sanitizeToken((await AppStorage.getItem("token")) || undefined);
+        const storedNannyId = await AppStorage.getItem("nanny_id");
+        const storedUserId = await AppStorage.getItem("user_id");
         const effectiveNannyId = String(storedNannyId || storedUserId || "").trim();
         const apiKey =
-          (await AsyncStorage.getItem("api_key")) ||
+          (await AppStorage.getItem("api_key")) ||
           getRuntimeApiKey() ||
           undefined;
         const detailsPath = effectiveNannyId
@@ -385,12 +385,12 @@ export default function NannyJobDetailScreen({
 
     try {
       setSending(true);
-      const token = sanitizeToken((await AsyncStorage.getItem("token")) || undefined);
-      const nannyId = (await AsyncStorage.getItem("nanny_id")) || (await AsyncStorage.getItem("user_id"));
-      const userId = await AsyncStorage.getItem("user_id");
+      const token = sanitizeToken((await AppStorage.getItem("token")) || undefined);
+      const nannyId = (await AppStorage.getItem("nanny_id")) || (await AppStorage.getItem("user_id"));
+      const userId = await AppStorage.getItem("user_id");
       const effectiveUserId = userId || nannyId || "";
       const apiKey =
-        (await AsyncStorage.getItem("api_key")) ||
+        (await AppStorage.getItem("api_key")) ||
         getRuntimeApiKey() ||
         undefined;
 

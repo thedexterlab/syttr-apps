@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import Constants from "expo-constants";
 
 const runtimeExtra =
@@ -31,7 +31,7 @@ export async function getResolvedApiKey(explicitApiKey?: string): Promise<string
     return cleanExplicitApiKey;
   }
 
-  const storedApiKey = String((await AsyncStorage.getItem("api_key")) || "").trim();
+  const storedApiKey = String((await AppStorage.getItem("api_key")) || "").trim();
   if (storedApiKey) {
     return storedApiKey;
   }
@@ -132,8 +132,8 @@ export const sanitizeToken = (value?: string) => {
 
 async function getAuthHeaders(): Promise<{ Authorization: string }> {
   const storedToken =
-    (await AsyncStorage.getItem("token")) ||
-    (await AsyncStorage.getItem("nanny_token"));
+    (await AppStorage.getItem("token")) ||
+    (await AppStorage.getItem("nanny_token"));
   const cleanToken = sanitizeToken(storedToken || undefined);
   return { Authorization: cleanToken ? `Bearer ${cleanToken}` : "" };
 }
@@ -175,7 +175,7 @@ const SUBSCRIPTION_REQUEST_TIMEOUT_MS = 120000;
 const PROFILE_UPLOAD_REQUEST_TIMEOUT_MS = 120000;
 const logApi = (event: string, payload: Record<string, unknown>) => {
   if (!LOG_API) return;
-  // eslint-disable-next-line no-console
+   
   console.log(`[API] ${event}`, payload);
 };
 
@@ -289,7 +289,6 @@ async function request<TResponse = any>(path: string, options: RequestOptions = 
       url,
       status: response.status,
       ok: response.ok,
-      data,
     });
 
     if (response.ok && !isAbsolute && i < urls.length - 1) {
@@ -598,7 +597,7 @@ export async function changePassword(payload: {
   const authHeaders = token
     ? { Authorization: `Bearer ${sanitizeToken(token)}` }
     : await getAuthHeaders();
-  const storedApiKey = await AsyncStorage.getItem("api_key");
+  const storedApiKey = await AppStorage.getItem("api_key");
   const cleanApiKey =
     String(storedApiKey || "").trim() ||
     (typeof process !== "undefined" ? String(process.env?.EXPO_PUBLIC_API_KEY || "").trim() : "") ||
@@ -623,7 +622,7 @@ export async function sendPasswordResetCode(
   const authHeaders = token
     ? { Authorization: `Bearer ${sanitizeToken(token)}` }
     : await getAuthHeaders();
-  const storedApiKey = await AsyncStorage.getItem("api_key");
+  const storedApiKey = await AppStorage.getItem("api_key");
   const cleanApiKey =
     String(storedApiKey || "").trim() ||
     (typeof process !== "undefined" ? String(process.env?.EXPO_PUBLIC_API_KEY || "").trim() : "") ||
@@ -1080,17 +1079,17 @@ export async function registerNannyWithProfile(
 }
 
 type AvailabilityPayload = {
-  availability: Array<{
+  availability: {
     day: string;
     date?: string;
-    time_slots: Array<{ period: string; time?: string; start_time?: string; end_time?: string }>;
-  }>;
+    time_slots: { period: string; time?: string; start_time?: string; end_time?: string }[];
+  }[];
 };
 
 type CalendarSlot = {
   date: string;
   times?: string[];
-  slots?: Array<{ start_time: string; end_time: string }>;
+  slots?: { start_time: string; end_time: string }[];
 };
 
 export async function getNannyAvailability(token?: string, nannyId?: string) {
@@ -1130,7 +1129,7 @@ export async function updateNannyAvailability(
   payload: AvailabilityPayload & {
     nanny_id?: string;
     mode?: 'weekly' | 'calendar';
-    calendar_slots?: CalendarSlot[] | Record<string, string[] | Array<{ start_time: string; end_time: string }>>;
+    calendar_slots?: CalendarSlot[] | Record<string, string[] | { start_time: string; end_time: string }[]>;
   },
   token?: string
 ) {

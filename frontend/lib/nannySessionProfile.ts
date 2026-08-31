@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { BASE_URL, getRuntimeApiKey, sanitizeToken } from "../app/Api";
 import { rewriteLoopbackAbsoluteUrl } from "./urlHosts";
 
@@ -135,10 +135,10 @@ const fetchJson = async (url: string, headers: HeadersInit): Promise<any | null>
 
 export const hydrateNannySessionProfile = async (): Promise<NannySessionProfile | null> => {
   const [tokenRaw, nannyIdRaw, userIdRaw, apiKeyStored] = await Promise.all([
-    AsyncStorage.getItem("token"),
-    AsyncStorage.getItem("nanny_id"),
-    AsyncStorage.getItem("user_id"),
-    AsyncStorage.getItem("api_key"),
+    AppStorage.getItem("token"),
+    AppStorage.getItem("nanny_id"),
+    AppStorage.getItem("user_id"),
+    AppStorage.getItem("api_key"),
   ]);
 
   const token = sanitizeToken(tokenRaw || undefined);
@@ -182,7 +182,7 @@ export const hydrateNannySessionProfile = async (): Promise<NannySessionProfile 
   if (merged.image) {
     sets.push(["nanny_image", merged.image], ["user_image", merged.image]);
   }
-  await AsyncStorage.multiSet(sets);
+  await AppStorage.multiSet(sets);
 
   return merged;
 };

@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   AppState,
   ActivityIndicator,
@@ -259,13 +259,14 @@ export default function NannyNotificationsScreen({
   const [ratingStars, setRatingStars] = useState(0);
   const [ratingReview, setRatingReview] = useState("");
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
+  const fetchNotificationsRef = useRef<(silent?: boolean) => Promise<void>>(async () => {});
   const unreadCount = items.filter(
     (item) => !isNotificationRead(item)
   ).length;
 
   const loadHiddenNotificationIds = async (): Promise<Set<string>> => {
     try {
-      const raw = await AsyncStorage.getItem(HIDDEN_NOTIFICATIONS_KEY);
+      const raw = await AppStorage.getItem(HIDDEN_NOTIFICATIONS_KEY);
       const parsed = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(parsed)) return new Set();
       return new Set(parsed.map((id) => String(id)));
@@ -277,7 +278,7 @@ export default function NannyNotificationsScreen({
   const persistHiddenNotificationIds = async (ids: Set<string>) => {
     const next = new Set(ids);
     try {
-      await AsyncStorage.setItem(HIDDEN_NOTIFICATIONS_KEY, JSON.stringify(Array.from(next)));
+      await AppStorage.setItem(HIDDEN_NOTIFICATIONS_KEY, JSON.stringify(Array.from(next)));
     } catch {
       // ignore storage issues
     }
@@ -295,7 +296,7 @@ export default function NannyNotificationsScreen({
 
   useEffect(() => {
     const refreshNotifications = (silent = false) => {
-      void fetchNotifications(silent);
+      void fetchNotificationsRef.current(silent);
     };
 
     refreshNotifications(false);
@@ -316,15 +317,15 @@ export default function NannyNotificationsScreen({
 
   const getAuthHeaders = async () => {
     const tokenRaw =
-      (await AsyncStorage.getItem("token")) ||
-      (await AsyncStorage.getItem("nanny_token"));
+      (await AppStorage.getItem("token")) ||
+      (await AppStorage.getItem("nanny_token"));
     const apiKey =
-      (await AsyncStorage.getItem("api_key")) ||
+      (await AppStorage.getItem("api_key")) ||
       getRuntimeApiKey() ||
       undefined;
-    const userId = await AsyncStorage.getItem("user_id");
+    const userId = await AppStorage.getItem("user_id");
     const nannyId =
-      (await AsyncStorage.getItem("nanny_id")) ||
+      (await AppStorage.getItem("nanny_id")) ||
       userId;
     const cleanToken = sanitizeToken(tokenRaw || undefined);
     const authHeader = cleanToken ? `Bearer ${cleanToken}` : undefined;
@@ -342,7 +343,7 @@ export default function NannyNotificationsScreen({
     }
     try {
       const { authHeader, apiKey, nannyId } = await getAuthHeaders();
-      const userType = await AsyncStorage.getItem("user_type");
+      const userType = await AppStorage.getItem("user_type");
 
       if (!authHeader) {
         if (!silent) {
@@ -427,6 +428,7 @@ export default function NannyNotificationsScreen({
       }
     }
   };
+  fetchNotificationsRef.current = fetchNotifications;
 
   const fetchHireRequests = async (
     nannyId?: string | null,
@@ -1124,7 +1126,6 @@ const buildParentStatsLabel = (parent: any, job: any) => {
 
   const getExtraHoursRequestMeta = (item?: NotificationItem) => {
     const row = item?.raw || {};
-    const rowData = row?.data || {};
     const notificationId = item?.id || row?.id || row?.notification_id;
     return {
       notificationId: String(notificationId || "").trim() || undefined,

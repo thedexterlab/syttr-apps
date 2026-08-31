@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, AppState, Easing, LogBox, Platform, StyleSheet } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AppStorage from '@/lib/storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiRequest, checkNannyApprovalStatus, isUserRejectedFromSources, isUserVerifiedFromSources, isVerificationRequiredApiError } from './_Api';
 import { consumeStoredNotificationResponse, subscribeNotificationResponses } from '../lib/pushNotifications';
@@ -395,7 +395,7 @@ export default function Index() {
         payload?.application_id,
         payload?.job_application_id
       );
-    const userType = String((await AsyncStorage.getItem('user_type')) || '').trim().toLowerCase();
+    const userType = String((await AppStorage.getItem('user_type')) || '').trim().toLowerCase();
     const isNanny = userType === 'nanny' || userType === 'syttr';
     const detailItem = buildNotificationDetailItem(payload, { type, jobId, applicationId });
 
@@ -735,7 +735,7 @@ export default function Index() {
       if (!shouldPoll) return;
 
       const [[, storedStatus], [, storedInterviewStatus], [, nannyId], [, token], [, apiKey], [, userType]] =
-        await AsyncStorage.multiGet([
+        await AppStorage.multiGet([
         'nanny_approval_state',
         'nanny_interview_status',
         'nanny_id',
@@ -822,7 +822,7 @@ export default function Index() {
             updates.push(['nanny_interview_status', interviewStatus]);
           }
           if (updates.length) {
-            await AsyncStorage.multiSet(updates);
+            await AppStorage.multiSet(updates);
           }
         }
 
@@ -870,7 +870,7 @@ export default function Index() {
     let active = true;
 
     const enforceLocalVerificationGate = async () => {
-      const [[, userType], [, storedStatus], [, storedInterviewStatus], [, nannyId]] = await AsyncStorage.multiGet([
+      const [[, userType], [, storedStatus], [, storedInterviewStatus], [, nannyId]] = await AppStorage.multiGet([
         'user_type',
         'nanny_approval_state',
         'nanny_interview_status',
@@ -909,7 +909,7 @@ export default function Index() {
     const enforceParentStatus = async () => {
       if (!parentRestrictedScreens.has(screen)) return;
 
-      const [[, userType], [, userId], [, token]] = await AsyncStorage.multiGet([
+      const [[, userType], [, userId], [, token]] = await AppStorage.multiGet([
         'user_type',
         'user_id',
         'token',
@@ -966,7 +966,7 @@ export default function Index() {
           status.includes('blacklist') ||
           status.includes('reject')
         ) {
-          await AsyncStorage.setItem('user_verification_status', 'blacklisted');
+          await AppStorage.setItem('user_verification_status', 'blacklisted');
           if (active && screen !== 'parentBlacklist') setScreen('parentBlacklist');
           return;
         }
@@ -977,7 +977,7 @@ export default function Index() {
           isVerified,
           verificationRequired,
         });
-        await AsyncStorage.setItem(
+        await AppStorage.setItem(
           'user_verification_status',
           isVerifiedByBackend ? 'approved' : (status || 'pending')
         );
@@ -1013,7 +1013,7 @@ export default function Index() {
 
   const handleSplashFinish = async () => {
     try {
-      const entries = await AsyncStorage.multiGet([
+      const entries = await AppStorage.multiGet([
         'token',
         'user_type',
         'nanny_id',
@@ -1098,7 +1098,7 @@ export default function Index() {
             updates.push(['nanny_interview_status', interviewStatus]);
           }
           if (updates.length) {
-            await AsyncStorage.multiSet(updates);
+            await AppStorage.multiSet(updates);
           }
         }
 
@@ -2109,7 +2109,7 @@ export default function Index() {
         }
         onNext={() => setScreen('verificationUnderReview')}
         onRejected={async () => {
-          const [[, userType], [, nannyId]] = await AsyncStorage.multiGet([
+          const [[, userType], [, nannyId]] = await AppStorage.multiGet([
             'user_type',
             'nanny_id',
           ]);
@@ -2207,7 +2207,7 @@ export default function Index() {
       <InterviewPendingScreen
         onBack={() => setScreen('login')}
         onDone={async () => {
-          await AsyncStorage.multiSet([
+          await AppStorage.multiSet([
             ['nanny_approval_state', 'approved'],
             ['user_verification_status', 'approved'],
           ]);
@@ -2220,7 +2220,7 @@ export default function Index() {
     renderedScreen = (
       <VerificationUnderReviewScreen
         onDone={async () => {
-          const [[, userType], [, nannyId]] = await AsyncStorage.multiGet([
+          const [[, userType], [, nannyId]] = await AppStorage.multiGet([
             'user_type',
             'nanny_id',
           ]);
@@ -2232,7 +2232,7 @@ export default function Index() {
           setScreen(isNannyUser ? 'nannyHome' : 'parentHome');
         }}
         onRejected={async () => {
-          const [[, userType], [, nannyId]] = await AsyncStorage.multiGet([
+          const [[, userType], [, nannyId]] = await AppStorage.multiGet([
             'user_type',
             'nanny_id',
           ]);

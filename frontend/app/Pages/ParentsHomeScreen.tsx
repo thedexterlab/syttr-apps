@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import type { LocationObjectCoords, LocationSubscription } from "expo-location";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -140,11 +140,20 @@ const ParentHomeScreen: React.FC<Props> = ({
 
   const [favorites, setFavorites] = useState<FavoriteNanny[]>([]);
   const [nearbyNannies, setNearbyNannies] = useState<FavoriteNanny[]>([]);
-  const [distanceMiles, setDistanceMiles] = useState<number>(25);
-  const [minRating, setMinRating] = useState<number>(0);
-  const [availableOnly, setAvailableOnly] = useState<boolean>(true);
-  const [skillsFilter, setSkillsFilter] = useState<string>("");
+  const [distanceMiles] = useState<number>(25);
+  const [minRating] = useState<number>(0);
+  const [availableOnly] = useState<boolean>(true);
+  const [skillsFilter] = useState<string>("");
   const [showFavorites, setShowFavorites] = useState(false);
+  const homeActionsRef = useRef<{
+    fetchTazStatus: () => Promise<boolean>;
+    handleLocateMe: (options?: { silent?: boolean }) => Promise<void>;
+    loadNearbyNannies: () => Promise<void>;
+  }>({
+    fetchTazStatus: async () => false,
+    handleLocateMe: async () => {},
+    loadNearbyNannies: async () => {},
+  });
   const bottomBarPadding = Math.max(8, insets.bottom);
   const bottomBarHeight = rs(60) + bottomBarPadding;
   const bottomBarOffset = 0;
@@ -192,8 +201,8 @@ const ParentHomeScreen: React.FC<Props> = ({
   const fetchTazStatus = async (): Promise<boolean> => {
     try {
       const [userId, token] = await Promise.all([
-        AsyncStorage.getItem("user_id"),
-        AsyncStorage.getItem("token"),
+        AppStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
       ]);
       if (!userId) return false;
 
@@ -238,7 +247,7 @@ const ParentHomeScreen: React.FC<Props> = ({
 
       if (profileStatus === "blacklisted") {
         setTazStatus("blacklisted");
-        await AsyncStorage.setItem("user_verification_status", "blacklisted");
+        await AppStorage.setItem("user_verification_status", "blacklisted");
         onBlacklisted?.();
         return true;
       }
@@ -249,14 +258,14 @@ const ParentHomeScreen: React.FC<Props> = ({
         const pendingStatus = profileStatus && profileStatus !== "unknown" ? profileStatus : "pending";
         setTazStatus(pendingStatus);
         setVerificationStatus(normalizeStatus(pendingStatus));
-        await AsyncStorage.setItem("user_verification_status", pendingStatus);
+        await AppStorage.setItem("user_verification_status", pendingStatus);
         onGetVerified?.();
         return true;
       }
       if (profileIsVerified) {
         setTazStatus("approved");
         setVerificationStatus("verified");
-        await AsyncStorage.setItem("user_verification_status", "approved");
+        await AppStorage.setItem("user_verification_status", "approved");
         return true;
       }
 
@@ -295,7 +304,7 @@ const ParentHomeScreen: React.FC<Props> = ({
         })
       ) {
         setTazStatus("blacklisted");
-        await AsyncStorage.setItem("user_verification_status", "blacklisted");
+        await AppStorage.setItem("user_verification_status", "blacklisted");
         onBlacklisted?.();
         return true;
       }
@@ -309,7 +318,7 @@ const ParentHomeScreen: React.FC<Props> = ({
       ) {
         setTazStatus("approved");
         setVerificationStatus("verified");
-        await AsyncStorage.setItem("user_verification_status", "approved");
+        await AppStorage.setItem("user_verification_status", "approved");
         return true;
       }
 
@@ -318,7 +327,7 @@ const ParentHomeScreen: React.FC<Props> = ({
           profileStatus && profileStatus !== "unknown" ? profileStatus : "unverified";
         setTazStatus(fallbackStatus === "unverified" ? null : fallbackStatus);
         setVerificationStatus(normalizeStatus(fallbackStatus));
-        await AsyncStorage.setItem("user_verification_status", fallbackStatus);
+        await AppStorage.setItem("user_verification_status", fallbackStatus);
         return true;
       }
 
@@ -331,7 +340,7 @@ const ParentHomeScreen: React.FC<Props> = ({
 
       if (latestStatus === "blacklisted") {
         setTazStatus("blacklisted");
-        await AsyncStorage.setItem("user_verification_status", "blacklisted");
+        await AppStorage.setItem("user_verification_status", "blacklisted");
         onBlacklisted?.();
         return true;
       }
@@ -343,11 +352,11 @@ const ParentHomeScreen: React.FC<Props> = ({
             ? "pending"
             : latestStatus;
         setTazStatus(nextStatus);
-        await AsyncStorage.setItem("user_verification_status", nextStatus);
+        await AppStorage.setItem("user_verification_status", nextStatus);
         setVerificationStatus(normalizeStatus(nextStatus));
         return true;
       } else if (profileStatus) {
-        await AsyncStorage.setItem("user_verification_status", profileStatus);
+        await AppStorage.setItem("user_verification_status", profileStatus);
         setVerificationStatus(normalizeStatus(profileStatus));
         return true;
       }
@@ -408,7 +417,7 @@ const ParentHomeScreen: React.FC<Props> = ({
     const cachedLabel = reverseGeocodeCacheRef.current[cacheKey];
     if (cachedLabel) {
       setLocationLabel(cachedLabel);
-      await AsyncStorage.multiSet([
+      await AppStorage.multiSet([
         ["last_location_label", cachedLabel],
         ["last_location_lat", String(coords.latitude)],
         ["last_location_lon", String(coords.longitude)],
@@ -422,7 +431,7 @@ const ParentHomeScreen: React.FC<Props> = ({
     if (isSameArea || isRateLimitedWindow) {
       if (fallbackLabel?.trim()) {
         setLocationLabel(fallbackLabel.trim());
-        await AsyncStorage.setItem("last_location_label", fallbackLabel.trim()).catch(() => {});
+        await AppStorage.setItem("last_location_label", fallbackLabel.trim()).catch(() => {});
       }
       return;
     }
@@ -442,7 +451,7 @@ const ParentHomeScreen: React.FC<Props> = ({
         if (label) {
           reverseGeocodeCacheRef.current[cacheKey] = label;
           setLocationLabel(label);
-          await AsyncStorage.multiSet([
+          await AppStorage.multiSet([
             ["last_location_label", label],
             ["last_location_lat", String(coords.latitude)],
             ["last_location_lon", String(coords.longitude)],
@@ -456,7 +465,7 @@ const ParentHomeScreen: React.FC<Props> = ({
 
     if (fallbackLabel?.trim()) {
       setLocationLabel(fallbackLabel.trim());
-      await AsyncStorage.setItem("last_location_label", fallbackLabel.trim()).catch(() => {});
+      await AppStorage.setItem("last_location_label", fallbackLabel.trim()).catch(() => {});
     }
   };
 
@@ -473,7 +482,7 @@ const ParentHomeScreen: React.FC<Props> = ({
 
   const hydrateLastLocation = async () => {
     try {
-      const [[, label], [, lat], [, lon]] = await AsyncStorage.multiGet([
+      const [[, label], [, lat], [, lon]] = await AppStorage.multiGet([
         "last_location_label",
         "last_location_lat",
         "last_location_lon",
@@ -691,8 +700,8 @@ const ParentHomeScreen: React.FC<Props> = ({
 
   const loadFavorites = async () => {
     const [userId, token] = await Promise.all([
-      AsyncStorage.getItem("user_id"),
-      AsyncStorage.getItem("token"),
+      AppStorage.getItem("user_id"),
+      AppStorage.getItem("token"),
     ]);
 
     try {
@@ -704,14 +713,14 @@ const ParentHomeScreen: React.FC<Props> = ({
           : [];
       const normalized = normalizeFavoriteList(rows);
       setFavorites(normalized);
-      await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(normalized));
+      await AppStorage.setItem(FAVORITES_KEY, JSON.stringify(normalized));
       return;
     } catch {
       // fallback to cache
     }
 
     try {
-      const raw = await AsyncStorage.getItem(FAVORITES_KEY);
+      const raw = await AppStorage.getItem(FAVORITES_KEY);
       const parsed = raw ? JSON.parse(raw) : [];
       const normalized = normalizeFavoriteList(Array.isArray(parsed) ? parsed : []);
       setFavorites(normalized);
@@ -723,9 +732,9 @@ const ParentHomeScreen: React.FC<Props> = ({
   const fetchNotificationCount = async () => {
     try {
       const [token, apiKey, userId] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("api_key"),
-        AsyncStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("api_key"),
+        AppStorage.getItem("user_id"),
       ]);
 
       if (!userId) {
@@ -759,7 +768,7 @@ const ParentHomeScreen: React.FC<Props> = ({
 
   const loadNearbyNannies = async () => {
     try {
-      const token = await AsyncStorage.getItem("token");
+      const token = await AppStorage.getItem("token");
       const params = new URLSearchParams({
         page: "1",
         per_page: "100",
@@ -857,9 +866,10 @@ const ParentHomeScreen: React.FC<Props> = ({
       setMessageCount(0);
     }
   };
+  homeActionsRef.current = { fetchTazStatus, handleLocateMe, loadNearbyNannies };
 
   useEffect(() => {
-    hydrateLastLocation().finally(() => handleLocateMe({ silent: true }));
+    hydrateLastLocation().finally(() => homeActionsRef.current.handleLocateMe({ silent: true }));
     loadFavorites();
     fetchNotificationCount();
     fetchRequestCount();
@@ -867,10 +877,10 @@ const ParentHomeScreen: React.FC<Props> = ({
 
     let active = true;
     const refreshVerificationStatus = async () => {
-      const resolved = await fetchTazStatus();
+      const resolved = await homeActionsRef.current.fetchTazStatus();
       if (!active || resolved) return;
 
-      const stored = await AsyncStorage.getItem("user_verification_status");
+      const stored = await AppStorage.getItem("user_verification_status");
       if (active) {
         setVerificationStatus(normalizeStatus(stored));
       }
@@ -880,7 +890,7 @@ const ParentHomeScreen: React.FC<Props> = ({
 
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active") {
-        fetchTazStatus();
+        void homeActionsRef.current.fetchTazStatus();
         fetchNotificationCount();
         fetchRequestCount();
         fetchMessageBadgeCount();
@@ -896,12 +906,15 @@ const ParentHomeScreen: React.FC<Props> = ({
 
   useEffect(() => {
     if (Platform.OS !== "web" || webMapQuery) return;
-    const interval = setInterval(() => handleLocateMe({ silent: true }), 120000);
+    const interval = setInterval(
+      () => void homeActionsRef.current.handleLocateMe({ silent: true }),
+      120000
+    );
     return () => clearInterval(interval);
   }, [webMapQuery]);
 
   useEffect(() => {
-    loadNearbyNannies();
+    void homeActionsRef.current.loadNearbyNannies();
   }, [region.latitude, region.longitude, distanceMiles, minRating, availableOnly, skillsFilter]);
 
   return (

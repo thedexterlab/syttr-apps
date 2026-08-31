@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { DocumentPicker } from "../utils/safeDocumentPicker";
 import { ImagePicker } from "../utils/safeImagePicker";
@@ -24,7 +24,7 @@ import {
 import { apiRequest, BASE_URL, getRuntimeApiKey, isVerificationRequiredApiError, sanitizeToken, updateNannyProfile } from "../Api";
 import SafeScreen from "../components/SafeScreen";
 import { Location } from "../utils/safeLocation";
-import { hp, rf, rs, wp } from "../utils/responsive";
+import { rf, rs } from "../utils/responsive";
 import { formatDateToMDY } from "../utils/dateFormat";
 import { resolveSessionImageUrl } from "../../lib/nannySessionProfile";
 import { rewriteLoopbackAbsoluteUrl } from "../../lib/urlHosts";
@@ -90,26 +90,23 @@ const getStoredNannyValue = async (key: keyof typeof NANNY_PRIMARY_KEYS) => {
   const primary = NANNY_PRIMARY_KEYS[key];
   const legacy = NANNY_LEGACY_KEYS[key];
 
-  const primaryValue = await AsyncStorage.getItem(primary);
+  const primaryValue = await AppStorage.getItem(primary);
   if (primaryValue !== null) return primaryValue;
 
-  const legacyValue = await AsyncStorage.getItem(legacy);
+  const legacyValue = await AppStorage.getItem(legacy);
   if (legacyValue !== null) {
-    await AsyncStorage.setItem(primary, legacyValue);
+    await AppStorage.setItem(primary, legacyValue);
   }
   return legacyValue;
 };
 
-const clearLegacyNannyKeys = () =>
-  AsyncStorage.multiRemove(Object.values(NANNY_LEGACY_KEYS));
-
 const resolveApiKey = async (): Promise<string | undefined> => {
-  const stored = String((await AsyncStorage.getItem("api_key")) || "").trim();
+  const stored = String((await AppStorage.getItem("api_key")) || "").trim();
   const runtime = String(getRuntimeApiKey() || "").trim();
   const resolved = stored || runtime;
   if (!stored && runtime) {
     try {
-      await AsyncStorage.setItem("api_key", runtime);
+      await AppStorage.setItem("api_key", runtime);
     } catch {
       // ignore storage failures; runtime key is still returned
     }
@@ -213,10 +210,11 @@ const NannyProfileViewScreen: React.FC<Props> = ({ navigation, onBack, onEdit, o
   const [avatarFailed, setAvatarFailed] = useState(false);
   const [certificatePreviewFailed, setCertificatePreviewFailed] = useState(false);
   const blobPreviewRef = useRef<string | null>(null);
+  const loadProfileRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
-    hydrateFromStorage();
-    loadProfile();
+    void hydrateFromStorage();
+    void loadProfileRef.current();
   }, []);
 
   useEffect(() => {
@@ -542,12 +540,12 @@ const NannyProfileViewScreen: React.FC<Props> = ({ navigation, onBack, onEdit, o
     }
     try {
       setSaving(true);
-      const token = await AsyncStorage.getItem("token");
+      const token = await AppStorage.getItem("token");
       const uploadApiKey = await resolveApiKey();
       const userId =
-        (await AsyncStorage.getItem("nanny_id")) ||
-        (await AsyncStorage.getItem("user_id")) ||
-        (await AsyncStorage.getItem("id"));
+        (await AppStorage.getItem("nanny_id")) ||
+        (await AppStorage.getItem("user_id")) ||
+        (await AppStorage.getItem("id"));
       if (!userId) {
         Alert.alert("Session issue", "User ID not found. Please sign in again.");
         return;
@@ -641,7 +639,7 @@ const NannyProfileViewScreen: React.FC<Props> = ({ navigation, onBack, onEdit, o
 
       const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
       const avatarUrl = resolveProfileImage(avatarFromApi);
-      await AsyncStorage.multiSet([
+      await AppStorage.multiSet([
         [NANNY_PRIMARY_KEYS.name, fullName],
         [NANNY_PRIMARY_KEYS.phone, phone.trim()],
         [NANNY_PRIMARY_KEYS.address, address.trim()],
@@ -690,11 +688,11 @@ const NannyProfileViewScreen: React.FC<Props> = ({ navigation, onBack, onEdit, o
     setLoading(true);
     try {
       const tokenRaw =
-        (await AsyncStorage.getItem("token")) ||
-        (await AsyncStorage.getItem("nanny_token"));
+        (await AppStorage.getItem("token")) ||
+        (await AppStorage.getItem("nanny_token"));
       const token = sanitizeToken(tokenRaw || undefined);
       const apiKey = await resolveApiKey();
-      const nannyId = (await AsyncStorage.getItem("nanny_id")) || (await AsyncStorage.getItem("user_id"));
+      const nannyId = (await AppStorage.getItem("nanny_id")) || (await AppStorage.getItem("user_id"));
       if (!nannyId) {
         Alert.alert("Error", "Session expired. Please login again.");
         return;
@@ -764,7 +762,7 @@ const NannyProfileViewScreen: React.FC<Props> = ({ navigation, onBack, onEdit, o
       if (mapped.date_of_birth)
         sets.push([NANNY_PRIMARY_KEYS.date_of_birth, String(mapped.date_of_birth)]);
       if (sets.length > 0) {
-        await AsyncStorage.multiSet(sets);
+        await AppStorage.multiSet(sets);
       }
       const legacySets: [string, string][] = [];
       if (fullName) legacySets.push([NANNY_LEGACY_KEYS.name, fullName]);
@@ -784,7 +782,7 @@ const NannyProfileViewScreen: React.FC<Props> = ({ navigation, onBack, onEdit, o
         legacySets.push([NANNY_LEGACY_KEYS.date_of_birth, String(mapped.date_of_birth)]);
       }
       if (legacySets.length > 0) {
-        await AsyncStorage.multiSet(legacySets);
+        await AppStorage.multiSet(legacySets);
       }
 
       if (fullName) setLocalName(fullName);
@@ -820,6 +818,7 @@ const NannyProfileViewScreen: React.FC<Props> = ({ navigation, onBack, onEdit, o
       setLoading(false);
     }
   };
+  loadProfileRef.current = loadProfile;
 
   const formattedDob =
     formatDateToMDY(profile?.date_of_birth || localDob) || "-";

@@ -97,7 +97,8 @@
           "merchantIdentifier": "merchant.com.syttr.app",
           "enableGooglePay": true
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,

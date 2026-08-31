@@ -8,7 +8,7 @@ if (args.length === 0) {
   process.exit(1);
 }
 
-const cliPath = path.join(__dirname, "..", "node_modules", "expo", "bin", "cli");
+const cliPath = path.join(path.dirname(require.resolve("expo/package.json")), "bin", "cli");
 const env = {
   ...process.env,
   EXPO_NO_DEPENDENCY_VALIDATION: process.env.EXPO_NO_DEPENDENCY_VALIDATION || "1",

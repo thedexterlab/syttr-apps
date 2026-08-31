@@ -58,7 +58,7 @@ export default function FaqScreen({
         useNativeDriver: useNative,
       }),
     ]).start();
-  }, []);
+  }, [fade, scale, slide, useNative]);
 
   return (
     <View style={{ flex: 1 }}>
@@ -293,5 +293,4 @@ const styles = StyleSheet.create({
     fontSize: rf(15),
   },
 });
-
 

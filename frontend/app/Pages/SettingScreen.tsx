@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
   AppState,
@@ -100,7 +100,6 @@ export default function SettingsScreen({
   const bottomBarOffset = -Math.max(insets.bottom, 0);
   const { width } = useWindowDimensions();
   const headerTitleSize = Math.min(Math.max(rf(20), 16), 28);
-  const headerIconSize = Math.min(Math.max(width * 0.06, 18), 26);
   const avatarSize = width * 0.16;
   const listIconSize = Math.min(Math.max(width * 0.045, 14), 22);
   const [userName, setUserName] = useState<string>("Unknown");
@@ -112,6 +111,10 @@ export default function SettingsScreen({
   const [requestCount, setRequestCount] = useState(0);
   const [messageCount, setMessageCount] = useState(0);
   const [notificationCount, setNotificationCount] = useState(0);
+  const settingsLoadersRef = useRef({
+    fetchTazStatus: async () => {},
+    loadNotificationCount: async () => {},
+  });
 
   const resolveProfileImage = React.useCallback((value?: string) => {
     return resolveSessionImageUrl(value);
@@ -143,11 +146,11 @@ export default function SettingsScreen({
 
   const loadSessionProfile = React.useCallback(async () => {
     const [name, email, image, status, subscriptionPlan] = await Promise.all([
-      AsyncStorage.getItem("user_name"),
-      AsyncStorage.getItem("user_email"),
-      AsyncStorage.getItem("user_image"),
-      AsyncStorage.getItem("user_verification_status"),
-      AsyncStorage.getItem("subscription_plan"),
+      AppStorage.getItem("user_name"),
+      AppStorage.getItem("user_email"),
+      AppStorage.getItem("user_image"),
+      AppStorage.getItem("user_verification_status"),
+      AppStorage.getItem("subscription_plan"),
     ]);
     setUserName(name || "Unknown");
     setUserEmail(email || "Unknown");
@@ -157,13 +160,13 @@ export default function SettingsScreen({
       onBlacklisted?.();
     }
     setIsSubscribed(!!subscriptionPlan);
-  }, [onBlacklisted]);
+  }, [onBlacklisted, resolveProfileImage]);
 
   const syncSubscriptionStatus = async () => {
     try {
       const [token, userId] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("user_id"),
       ]);
       const data = await getSubscriptionStatus(
         token || undefined,
@@ -179,9 +182,9 @@ export default function SettingsScreen({
 
       setIsSubscribed(subscribed);
       if (subscribed && plan) {
-        await AsyncStorage.setItem("subscription_plan", plan);
+        await AppStorage.setItem("subscription_plan", plan);
       } else if (!subscribed) {
-        await AsyncStorage.removeItem("subscription_plan");
+        await AppStorage.removeItem("subscription_plan");
       }
     } catch {
       // keep local fallback
@@ -219,8 +222,8 @@ export default function SettingsScreen({
   const syncRemoteProfile = React.useCallback(async () => {
     try {
       const [userId, token] = await Promise.all([
-        AsyncStorage.getItem("user_id"),
-        AsyncStorage.getItem("token"),
+        AppStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
       ]);
       const normalizedUserId = String(userId || "").trim();
       if (!normalizedUserId) return;
@@ -249,7 +252,7 @@ export default function SettingsScreen({
       if (nextEmail) pairs.push(["user_email", nextEmail]);
       if (nextImage) pairs.push(["user_image", nextImage]);
       if (pairs.length) {
-        await AsyncStorage.multiSet(pairs);
+        await AppStorage.multiSet(pairs);
       }
     } catch (error: any) {
       const status = Number(error?.status || 0);
@@ -265,11 +268,11 @@ export default function SettingsScreen({
       await loadSessionProfile();
       await syncPushRegistration(false).catch(() => {});
       await syncRemoteProfile();
-      fetchTazStatus();
+      void settingsLoadersRef.current.fetchTazStatus();
       await syncSubscriptionStatus();
       await loadRequestCount();
       await loadMessageCount();
-      await loadNotificationCount();
+      await settingsLoadersRef.current.loadNotificationCount();
     })();
   }, [loadSessionProfile, syncRemoteProfile]);
 
@@ -279,7 +282,7 @@ export default function SettingsScreen({
       void syncRemoteProfile();
       void loadRequestCount();
       void loadMessageCount();
-      void loadNotificationCount();
+      void settingsLoadersRef.current.loadNotificationCount();
     });
     return () => unsubscribe?.();
   }, [loadSessionProfile, navigation, syncRemoteProfile]);
@@ -291,7 +294,7 @@ export default function SettingsScreen({
         void syncRemoteProfile();
         void loadRequestCount();
         void loadMessageCount();
-        void loadNotificationCount();
+        void settingsLoadersRef.current.loadNotificationCount();
       }
     });
     return () => sub.remove();
@@ -306,8 +309,8 @@ export default function SettingsScreen({
   const fetchTazStatus = async () => {
     try {
       const [userId, tokenRaw] = await Promise.all([
-        AsyncStorage.getItem("user_id"),
-        AsyncStorage.getItem("token"),
+        AppStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
       ]);
       if (!userId) return;
 
@@ -350,7 +353,7 @@ export default function SettingsScreen({
         });
       if (profileIsVerified) {
         setTazStatus("approved");
-        await AsyncStorage.setItem("user_verification_status", "approved");
+        await AppStorage.setItem("user_verification_status", "approved");
         setVerificationStatus("verified");
         return;
       }
@@ -360,7 +363,7 @@ export default function SettingsScreen({
       ) {
         const pendingStatus = profileStatus && profileStatus !== "unknown" ? profileStatus : "pending";
         setTazStatus(pendingStatus);
-        await AsyncStorage.setItem("user_verification_status", pendingStatus);
+        await AppStorage.setItem("user_verification_status", pendingStatus);
         setVerificationStatus(normalizeStatus(pendingStatus));
         onGetVerified?.();
         return;
@@ -402,7 +405,7 @@ export default function SettingsScreen({
       const statusFromApi = String(data?.status || "").toLowerCase();
       if (hasBlacklisted || statusFromApi === "blacklisted") {
         setTazStatus("blacklisted");
-        await AsyncStorage.setItem("user_verification_status", "blacklisted");
+        await AppStorage.setItem("user_verification_status", "blacklisted");
         onBlacklisted?.();
         return;
       }
@@ -420,7 +423,7 @@ export default function SettingsScreen({
       ).trim();
       if (resolvedStatus) {
         setTazStatus(resolvedStatus);
-        await AsyncStorage.setItem("user_verification_status", resolvedStatus);
+        await AppStorage.setItem("user_verification_status", resolvedStatus);
         setVerificationStatus(normalizeStatus(resolvedStatus));
       }
     } catch {
@@ -459,9 +462,9 @@ export default function SettingsScreen({
   const loadNotificationCount = async () => {
     try {
       const [token, apiKey, userId] = await Promise.all([
-        AsyncStorage.getItem("token"),
-        AsyncStorage.getItem("api_key"),
-        AsyncStorage.getItem("user_id"),
+        AppStorage.getItem("token"),
+        AppStorage.getItem("api_key"),
+        AppStorage.getItem("user_id"),
       ]);
 
       if (!userId) {
@@ -487,6 +490,7 @@ export default function SettingsScreen({
       setNotificationCount(0);
     }
   };
+  settingsLoadersRef.current = { fetchTazStatus, loadNotificationCount };
 
   const formatStatusLabel = (raw?: string | null) => {
     if (!raw) return "";
@@ -536,7 +540,7 @@ export default function SettingsScreen({
     if (onLogout) {
       await onLogout();
     } else {
-      await AsyncStorage.clear();
+      await AppStorage.clear();
     }
     if (navigation?.reset) {
       navigation.reset({ index: 0, routes: [{ name: "Login" }] });
@@ -577,7 +581,7 @@ export default function SettingsScreen({
 
   const doDeactivateAccount = async () => {
     try {
-      const token = await AsyncStorage.getItem("token");
+      const token = await AppStorage.getItem("token");
       await deactivateAccount(token || undefined);
       if (Platform.OS === "web") {
         window.alert(

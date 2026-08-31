@@ -74,7 +74,7 @@ const WelcomeScreen: React.FC<Props> = ({
       ghostPadding,
       footerTop,
     };
-  }, [width, height]);
+  }, [height, insets.top, width]);
 
   return (
     <LinearGradient
@@ -358,6 +358,5 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.display,
   },
 });
-
 
 

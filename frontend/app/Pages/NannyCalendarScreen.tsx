@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -113,7 +113,7 @@ export default function NannyCalendarScreen({
   const [loading, setLoading] = useState(false);
   const [activeTab] = useState<NannyNavKey>("Calendar");
 
-  const extractKidNames = (job: any) => {
+  const extractKidNames = useCallback((job: any) => {
     const names: string[] = [];
     const collect = (child: any) => {
       if (child?.name) names.push(child.name);
@@ -134,18 +134,7 @@ export default function NannyCalendarScreen({
     }
 
     return names;
-  };
-
-  useEffect(() => {
-    loadAppointments();
   }, []);
-
-  useEffect(() => {
-    const unsubscribe = navigation?.addListener?.("focus", () => {
-      loadAppointments();
-    });
-    return () => unsubscribe?.();
-  }, [navigation]);
 
   const handleMonthChange = (delta: number) => {
     const next = addMonths(monthAnchor, delta);
@@ -156,10 +145,10 @@ export default function NannyCalendarScreen({
     });
   };
 
-  const loadAppointments = async () => {
+  const loadAppointments = useCallback(async () => {
     setLoading(true);
     try {
-      const entries = await AsyncStorage.multiGet([
+      const entries = await AppStorage.multiGet([
         "token",
         "nanny_token",
         "api_key",
@@ -304,7 +293,18 @@ export default function NannyCalendarScreen({
     } finally {
       setLoading(false);
     }
-  };
+  }, [extractKidNames, onRequireVerification]);
+
+  useEffect(() => {
+    void loadAppointments();
+  }, [loadAppointments]);
+
+  useEffect(() => {
+    const unsubscribe = navigation?.addListener?.("focus", () => {
+      void loadAppointments();
+    });
+    return () => unsubscribe?.();
+  }, [loadAppointments, navigation]);
 
   const monthDays = useMemo(() => buildMonthDays(monthAnchor), [monthAnchor]);
   const selectedKey = formatKey(selectedDate);

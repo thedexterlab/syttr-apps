@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useRef } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -38,8 +38,8 @@ export default function ParentBlacklistScreen({ onResolved, onSignOut, onSupport
 
       try {
         const [userId, token] = await Promise.all([
-          AsyncStorage.getItem("user_id"),
-          AsyncStorage.getItem("token"),
+          AppStorage.getItem("user_id"),
+          AppStorage.getItem("token"),
         ]);
         if (!userId) return;
 
@@ -53,7 +53,7 @@ export default function ParentBlacklistScreen({ onResolved, onSignOut, onSupport
           profileData?.status || profileData?.approval_status || ""
         ).toLowerCase();
         if (status !== "blacklisted") {
-          await AsyncStorage.setItem("user_verification_status", "pending");
+          await AppStorage.setItem("user_verification_status", "pending");
           if (!mountedRef.current) return;
           onResolved?.();
           return;
@@ -71,7 +71,7 @@ export default function ParentBlacklistScreen({ onResolved, onSignOut, onSupport
         );
 
         if (!hasBlacklisted) {
-          await AsyncStorage.setItem("user_verification_status", "pending");
+          await AppStorage.setItem("user_verification_status", "pending");
           if (!mountedRef.current) return;
           onResolved?.();
         }
@@ -94,7 +94,7 @@ export default function ParentBlacklistScreen({ onResolved, onSignOut, onSupport
   }, [onResolved]);
 
   const handleSignOut = async () => {
-    await AsyncStorage.clear();
+    await AppStorage.clear();
     onSignOut?.();
   };
 
@@ -201,5 +201,4 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 });
-
 

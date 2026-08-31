@@ -81,7 +81,7 @@ export default function AboutUsScreen({ navigation }: Props) {
         useNativeDriver: Platform.OS !== "web",
       }),
     ]).start();
-  }, []);
+  }, [fade, slide]);
 
   return (
     <View style={{ flex: 1 }}>
@@ -326,5 +326,4 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
 });
-
 

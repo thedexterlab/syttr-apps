@@ -1,8 +1,8 @@
 /// <reference types="react" />
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AppStorage from "@/lib/storage";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
     ActivityIndicator,
     AppState,
@@ -21,13 +21,12 @@ import {
 } from "react-native";
 import { hp, rf, rs, wp } from "../utils/responsive";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { apiRequest, BASE_URL, getRuntimeApiKey, sanitizeToken } from "../Api";
+import { apiRequest, getRuntimeApiKey, sanitizeToken } from "../Api";
 import { formatDateToMDY } from "../utils/dateFormat";
 import { fetchUnreadParentRequestCount } from "../../lib/parentRequestNotifications";
 import { fetchUnreadConversationCount } from "../../lib/chatUnreadCount";
 import { subscribeToNotifications } from "../../lib/pusherClient";
 
-const API_BASE = BASE_URL.replace(/\/+$/, "");
 const HIDDEN_NOTIFICATIONS_KEY = "hidden_notifications_parent";
 
 /* ----------------------------- TYPES ----------------------------- */
@@ -368,11 +367,12 @@ export default function NotificationsScreen({
   const [ratingStars, setRatingStars] = useState(0);
   const [ratingReview, setRatingReview] = useState("");
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
+  const fetchNotificationsRef = useRef<(silent?: boolean) => Promise<void>>(async () => {});
   const unreadCount = items.filter((item) => !isNotificationRead(item)).length;
 
   const loadHiddenNotificationIds = async (): Promise<Set<string>> => {
     try {
-      const raw = await AsyncStorage.getItem(HIDDEN_NOTIFICATIONS_KEY);
+      const raw = await AppStorage.getItem(HIDDEN_NOTIFICATIONS_KEY);
       const parsed = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(parsed)) return new Set();
       return new Set(parsed.map((id) => String(id)));
@@ -385,7 +385,7 @@ export default function NotificationsScreen({
     const next = new Set(ids);
     setHiddenNotificationIds(next);
     try {
-      await AsyncStorage.setItem(HIDDEN_NOTIFICATIONS_KEY, JSON.stringify(Array.from(next)));
+      await AppStorage.setItem(HIDDEN_NOTIFICATIONS_KEY, JSON.stringify(Array.from(next)));
     } catch {
       // ignore storage issues
     }
@@ -541,7 +541,7 @@ export default function NotificationsScreen({
     const load = async (silent = false) => {
       const hidden = await loadHiddenNotificationIds();
       setHiddenNotificationIds(hidden);
-      await fetchNotifications(silent);
+      await fetchNotificationsRef.current(silent);
       await loadRequestCount();
       await loadMessageCount();
     };
@@ -565,10 +565,10 @@ export default function NotificationsScreen({
   useEffect(() => {
     let unsub = () => {};
     (async () => {
-      const userId = await AsyncStorage.getItem("user_id");
+      const userId = await AppStorage.getItem("user_id");
       if (!userId) return;
       const sub = subscribeToNotifications(userId, () => {
-        void fetchNotifications(true);
+        void fetchNotificationsRef.current(true);
         void loadRequestCount();
         void loadMessageCount();
       });
@@ -586,11 +586,11 @@ export default function NotificationsScreen({
       setLoading(true);
     }
     try {
-      const token = await AsyncStorage.getItem("token");
+      const token = await AppStorage.getItem("token");
       const cleanToken = sanitizeToken(token || undefined);
-      const userId = await AsyncStorage.getItem("user_id");
+      const userId = await AppStorage.getItem("user_id");
       const apiKey =
-        (await AsyncStorage.getItem("api_key")) ||
+        (await AppStorage.getItem("api_key")) ||
         getRuntimeApiKey() ||
         undefined;
 
@@ -649,6 +649,7 @@ export default function NotificationsScreen({
       void loadRequestCount();
     }
   };
+  fetchNotificationsRef.current = fetchNotifications;
 
   const loadRequestCount = async () => {
     try {
@@ -670,12 +671,12 @@ export default function NotificationsScreen({
 
   const getAuthContext = async () => {
     const token =
-      (await AsyncStorage.getItem("token")) ||
-      (await AsyncStorage.getItem("nanny_token"));
-    const userId = await AsyncStorage.getItem("user_id");
-    const nannyId = await AsyncStorage.getItem("nanny_id");
+      (await AppStorage.getItem("token")) ||
+      (await AppStorage.getItem("nanny_token"));
+    const userId = await AppStorage.getItem("user_id");
+    const nannyId = await AppStorage.getItem("nanny_id");
     const apiKey =
-      (await AsyncStorage.getItem("api_key")) ||
+      (await AppStorage.getItem("api_key")) ||
       getRuntimeApiKey() ||
       undefined;
     return { token, userId, nannyId, apiKey };
